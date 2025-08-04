@@ -24,6 +24,12 @@ public class MatchResult {
     Integer newEloA;
 
     @NonNull
+    Integer oldEloA;
+
+    @NonNull
+    Integer oldEloB;
+
+    @NonNull
     Integer newEloB;
 
     /** when the match was played */

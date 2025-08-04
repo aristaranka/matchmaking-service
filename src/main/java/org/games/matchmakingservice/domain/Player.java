@@ -1,12 +1,10 @@
 package org.games.matchmakingservice.domain;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
+import lombok.Builder;
 import java.time.Instant;
-import java.time.LocalDateTime;
 
 @Data
 @Builder
@@ -17,5 +15,5 @@ public class Player {
     private String username;
     private Integer elo;
     private Instant lastActive;
-    private boolean online;
+    private Boolean online;
 } 
