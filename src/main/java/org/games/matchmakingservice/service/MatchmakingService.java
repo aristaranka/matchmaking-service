@@ -20,8 +20,10 @@ import io.micrometer.core.instrument.MeterRegistry;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -82,9 +84,12 @@ public class MatchmakingService {
             log.debug("Successfully added player {} to ZSET", playerId);
             
             // Store essential data in hash for metadata preservation
-            redisTemplate.opsForHash().put(MATCHMAKING_REQUESTS, playerId, 
-                String.format("{\"playerId\":\"%s\",\"elo\":%d,\"timestamp\":\"%s\"}", 
-                    playerId, matchRequest.getElo(), matchRequest.getTimestamp()));
+            String jsonData = String.format("{\"playerId\":\"%s\",\"elo\":%d,\"timestamp\":\"%s\"}", 
+                playerId, matchRequest.getElo(), matchRequest.getTimestamp());
+            
+            log.debug("Storing JSON data for player {}: {}", playerId, jsonData);
+            
+            redisTemplate.opsForHash().put(MATCHMAKING_REQUESTS, playerId, jsonData);
             
             log.debug("Successfully stored MatchRequest for player {}", playerId);
             
@@ -211,6 +216,15 @@ public class MatchmakingService {
                     break; // No compatible matches found
                 }
                 
+                // Get the MatchRequest data BEFORE removing players from Redis
+                MatchRequest requestA = getMatchRequest(bestMatch.playerA);
+                MatchRequest requestB = getMatchRequest(bestMatch.playerB);
+                
+                if (requestA == null || requestB == null) {
+                    log.error("Missing match request data for players: {} or {}", bestMatch.playerA, bestMatch.playerB);
+                    break;
+                }
+                
                 // Use Redis transaction for atomic removal
                 Boolean matchCreated = redisTemplate.execute(new SessionCallback<>() {
                     @Override
@@ -230,8 +244,8 @@ public class MatchmakingService {
                 });
                 
                 if (Boolean.TRUE.equals(matchCreated)) {
-                    // Create match - players are atomically removed from queue
-                    createMatch(bestMatch.playerA, bestMatch.playerB);
+                    // Create match with the data we captured before removal
+                    createMatchWithData(bestMatch.playerA, bestMatch.playerB, requestA, requestB);
                     log.info("Matched players: {} (Elo: {}) vs {} (Elo: {})", 
                             bestMatch.playerA, bestMatch.eloA, bestMatch.playerB, bestMatch.eloB);
                     
@@ -259,9 +273,13 @@ public class MatchmakingService {
     private MatchRequest getMatchRequest(String playerId) {
         try {
             Object stored = redisTemplate.opsForHash().get(MATCHMAKING_REQUESTS, playerId);
+            log.debug("Retrieved stored data for player {}: {}", playerId, stored);
+            
             if (stored instanceof String) {
                 // Parse the JSON string to extract Elo
                 String jsonString = (String) stored;
+                log.debug("Parsing JSON string: {}", jsonString);
+                
                 // Simple JSON parsing to extract Elo
                 if (jsonString.contains("\"elo\":")) {
                     int eloStart = jsonString.indexOf("\"elo\":") + 6;
@@ -271,6 +289,7 @@ public class MatchmakingService {
                     }
                     if (eloEnd > eloStart) {
                         int elo = Integer.parseInt(jsonString.substring(eloStart, eloEnd));
+                        log.debug("Extracted Elo {} for player {}", elo, playerId);
                         return MatchRequest.builder()
                             .playerId(playerId)
                             .elo(elo)
@@ -278,6 +297,7 @@ public class MatchmakingService {
                             .build();
                     }
                 }
+                log.warn("Could not parse Elo from JSON string: {}", jsonString);
                 // Fallback to default Elo
                 return MatchRequest.builder()
                     .playerId(playerId)
@@ -285,6 +305,7 @@ public class MatchmakingService {
                     .timestamp(Instant.now())
                     .build();
             }
+            log.debug("Stored data is not a string: {}", stored != null ? stored.getClass().getSimpleName() : "null");
             return (MatchRequest) stored;
         } catch (Exception e) {
             log.error("Failed to get match request for player {}", playerId, e);
@@ -347,29 +368,25 @@ public class MatchmakingService {
     }
 
     /**
-     * Create a match between two players.
+     * Create a match between two players with pre-captured data.
      * 
      * @param playerA Player A ID
      * @param playerB Player B ID
+     * @param requestA Player A's match request data
+     * @param requestB Player B's match request data
      */
-    private void createMatch(String playerA, String playerB) {
+    private void createMatchWithData(String playerA, String playerB, MatchRequest requestA, MatchRequest requestB) {
         try {
+            log.debug("Creating match between {} and {} with pre-captured data", playerA, playerB);
             String matchId = UUID.randomUUID().toString();
-            
-            // Get original Elo ratings from MatchRequest objects
-            MatchRequest requestA = getMatchRequest(playerA);
-            MatchRequest requestB = getMatchRequest(playerB);
-            
-            if (requestA == null || requestB == null) {
-                log.error("Missing match request data for players: {} or {}", playerA, playerB);
-                return;
-            }
             
             int oldEloA = requestA.getElo();
             int oldEloB = requestB.getElo();
             
-            // Randomly determine winner (in real implementation, this would be game logic)
-            boolean playerAWins = Math.random() < 0.5;
+            // Determine winner with Elo-based probability
+            // Higher Elo player has better chance of winning
+            double playerAWinProbability = calculateWinProbability(oldEloA, oldEloB);
+            boolean playerAWins = Math.random() < playerAWinProbability;
             
             // Calculate new ratings using EloService
             EloService.EloResult eloResult = playerAWins ? 
@@ -385,6 +402,7 @@ public class MatchmakingService {
                     .oldEloB(oldEloB)
                     .newEloA(eloResult.ratingA())
                     .newEloB(eloResult.ratingB())
+                    .winner(playerAWins ? playerA : playerB)
                     .playedAt(Instant.now())
                     .build();
             
@@ -397,9 +415,9 @@ public class MatchmakingService {
             // Schedule match end
             scheduleMatchEnd(matchId);
             
-            log.info("Match created: {} vs {} (Winner: {}) - Elo changes: {}->{}, {}->{}", 
-                    playerA, playerB, playerAWins ? playerA : playerB,
-                    oldEloA, eloResult.ratingA(), oldEloB, eloResult.ratingB());
+            log.info("Match completed: {} (Elo: {}) vs {} (Elo: {}). Winner: {} (New Elo: {} vs {})", 
+                    playerA, oldEloA, playerB, oldEloB, matchResult.getWinner(),
+                    matchResult.getNewEloA(), matchResult.getNewEloB());
                     
         } catch (Exception e) {
             log.error("Failed to create match between {} and {}", playerA, playerB, e);
@@ -498,11 +516,31 @@ public class MatchmakingService {
      */
     private void storeMatchResult(MatchResult matchResult) {
         try {
+            log.debug("Attempting to store match result: {}", matchResult.getMatchId());
+            
+            // Store as JSON string to avoid serialization issues
+            String jsonResult = String.format(
+                "{\"matchId\":\"%s\",\"playerA\":\"%s\",\"playerB\":\"%s\",\"oldEloA\":%d,\"oldEloB\":%d,\"newEloA\":%d,\"newEloB\":%d,\"winner\":\"%s\",\"playedAt\":\"%s\"}",
+                matchResult.getMatchId(),
+                matchResult.getPlayerA(),
+                matchResult.getPlayerB(),
+                matchResult.getOldEloA(),
+                matchResult.getOldEloB(),
+                matchResult.getNewEloA(),
+                matchResult.getNewEloB(),
+                matchResult.getWinner(),
+                matchResult.getPlayedAt()
+            );
+            
+            log.debug("JSON result: {}", jsonResult);
+            
             redisTemplate.opsForHash().put(MATCHMAKING_RESULTS, 
-                    matchResult.getMatchId(), matchResult);
+                    matchResult.getMatchId(), jsonResult);
             
             // Set expiration for cleanup (e.g., 24 hours)
             redisTemplate.expire(MATCHMAKING_RESULTS, 24, TimeUnit.HOURS);
+            
+            log.info("Successfully stored match result: {}", matchResult.getMatchId());
             
         } catch (Exception e) {
             log.error("Failed to store match result {}", matchResult.getMatchId(), e);
@@ -558,6 +596,20 @@ public class MatchmakingService {
     }
 
     /**
+     * Calculate win probability based on Elo difference.
+     * Uses the same formula as Elo rating system.
+     * 
+     * @param eloA Player A's Elo
+     * @param eloB Player B's Elo
+     * @return Probability that Player A wins (0.0 to 1.0)
+     */
+    private double calculateWinProbability(int eloA, int eloB) {
+        double eloDifference = eloA - eloB;
+        double expectedScore = 1.0 / (1.0 + Math.pow(10, -eloDifference / 400.0));
+        return expectedScore;
+    }
+
+    /**
      * Get queue statistics.
      * 
      * @return Number of players in queue
@@ -572,6 +624,66 @@ public class MatchmakingService {
     }
 
     /**
+     * Parse JSON string to MatchResultDto.
+     * 
+     * @param jsonString The JSON string to parse
+     * @return MatchResultDto or null if parsing fails
+     */
+    private MatchResultDto parseMatchResultFromJson(String jsonString) {
+        try {
+            // Simple JSON parsing to extract fields
+            String matchId = extractJsonField(jsonString, "matchId");
+            String playerA = extractJsonField(jsonString, "playerA");
+            String playerB = extractJsonField(jsonString, "playerB");
+            String winner = extractJsonField(jsonString, "winner");
+            
+            Integer oldEloA = extractJsonIntField(jsonString, "oldEloA");
+            Integer oldEloB = extractJsonIntField(jsonString, "oldEloB");
+            Integer newEloA = extractJsonIntField(jsonString, "newEloA");
+            Integer newEloB = extractJsonIntField(jsonString, "newEloB");
+            
+            String playedAtStr = extractJsonField(jsonString, "playedAt");
+            Instant playedAt = playedAtStr != null ? Instant.parse(playedAtStr) : Instant.now();
+            
+            // Use builder pattern to avoid constructor parameter order issues
+            return MatchResultDto.builder()
+                .matchId(matchId)
+                .playerA(playerA)
+                .playerB(playerB)
+                .oldEloA(oldEloA)
+                .oldEloB(oldEloB)
+                .newEloA(newEloA)
+                .newEloB(newEloB)
+                .winner(winner)
+                .playedAt(playedAt)
+                .build();
+        } catch (Exception e) {
+            log.error("Failed to parse match result JSON: {}", jsonString, e);
+            return null;
+        }
+    }
+    
+    /**
+     * Extract string field from JSON.
+     */
+    private String extractJsonField(String json, String fieldName) {
+        String pattern = "\"" + fieldName + "\":\"([^\"]*)\"";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher m = p.matcher(json);
+        return m.find() ? m.group(1) : null;
+    }
+    
+    /**
+     * Extract integer field from JSON.
+     */
+    private Integer extractJsonIntField(String json, String fieldName) {
+        String pattern = "\"" + fieldName + "\":(\\d+)";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher m = p.matcher(json);
+        return m.find() ? Integer.parseInt(m.group(1)) : null;
+    }
+
+    /**
      * Convert MatchResult to MatchResultDto for API responses.
      * 
      * @param matchResult The domain MatchResult
@@ -583,14 +695,17 @@ public class MatchmakingService {
             return null;
         }
         
-        return new MatchResultDto(
-            matchResult.getMatchId(),
-            matchResult.getPlayerA(),
-            matchResult.getPlayerB(),
-            matchResult.getNewEloA(),
-            matchResult.getNewEloB(),
-            matchResult.getPlayedAt()
-        );
+        return MatchResultDto.builder()
+            .matchId(matchResult.getMatchId())
+            .playerA(matchResult.getPlayerA())
+            .playerB(matchResult.getPlayerB())
+            .oldEloA(matchResult.getOldEloA())
+            .oldEloB(matchResult.getOldEloB())
+            .newEloA(matchResult.getNewEloA())
+            .newEloB(matchResult.getNewEloB())
+            .winner(matchResult.getWinner())
+            .playedAt(matchResult.getPlayedAt())
+            .build();
     }
 
     /**
@@ -601,10 +716,49 @@ public class MatchmakingService {
      */
     public List<MatchResultDto> getRecentMatchResults(int limit) {
         try {
-            // In a real implementation, you might want to store results in a separate sorted set
-            // For now, we'll return an empty list as this would require additional Redis structure
             log.debug("Getting recent match results (limit: {})", limit);
-            return List.of();
+            
+            // Get all match results from Redis hash
+            Map<Object, Object> allResults = redisTemplate.opsForHash().entries(MATCHMAKING_RESULTS);
+            log.debug("Found {} results in Redis", allResults.size());
+            
+            List<MatchResultDto> results = new ArrayList<>();
+            
+            for (Map.Entry<Object, Object> entry : allResults.entrySet()) {
+                try {
+                    Object value = entry.getValue();
+                    log.debug("Processing result: {}", value.getClass().getSimpleName());
+                    
+                    if (value instanceof String) {
+                        // Parse JSON string to MatchResultDto
+                        String jsonString = (String) value;
+                        MatchResultDto dto = parseMatchResultFromJson(jsonString);
+                        if (dto != null) {
+                            results.add(dto);
+                        }
+                    } else if (value instanceof MatchResult) {
+                        MatchResultDto dto = convertToDto((MatchResult) value);
+                        if (dto != null) {
+                            results.add(dto);
+                        }
+                    } else {
+                        log.warn("Unexpected result type: {}", value.getClass().getSimpleName());
+                    }
+                } catch (Exception e) {
+                    log.error("Error processing match result: {}", entry.getKey(), e);
+                }
+            }
+            
+            // Sort by most recent first
+            results.sort((a, b) -> b.getPlayedAt().compareTo(a.getPlayedAt()));
+            
+            // Limit results
+            if (results.size() > limit) {
+                results = results.subList(0, limit);
+            }
+            
+            log.debug("Returning {} match results", results.size());
+            return results;
         } catch (Exception e) {
             log.error("Failed to get recent match results", e);
             return List.of();

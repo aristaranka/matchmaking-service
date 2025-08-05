@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.games.matchmakingservice.domain.Player;
 import org.games.matchmakingservice.dto.MatchRequestDto;
+import org.games.matchmakingservice.dto.MatchResultDto;
 import org.games.matchmakingservice.service.MatchmakingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -176,6 +177,34 @@ public class MatchmakingController {
                     "success", false,
                     "message", "Internal server error",
                     "playerId", playerId
+                ));
+        }
+    }
+
+    /**
+     * Get recent match results.
+     * 
+     * @param limit Maximum number of results to return (default: 10)
+     * @return Recent match results
+     */
+    @GetMapping("/results")
+    public ResponseEntity<Map<String, Object>> getMatchResults(
+            @RequestParam(defaultValue = "10") int limit) {
+        try {
+            List<MatchResultDto> results = matchmakingService.getRecentMatchResults(limit);
+            
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "results", results,
+                "count", results.size(),
+                "timestamp", System.currentTimeMillis()
+            ));
+        } catch (Exception e) {
+            log.error("Error getting match results", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of(
+                    "success", false,
+                    "message", "Internal server error"
                 ));
         }
     }

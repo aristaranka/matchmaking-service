@@ -32,6 +32,9 @@ public class MatchResult {
     @NonNull
     Integer newEloB;
 
+    @NonNull
+    String winner;
+
     /** when the match was played */
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
     Instant playedAt;
