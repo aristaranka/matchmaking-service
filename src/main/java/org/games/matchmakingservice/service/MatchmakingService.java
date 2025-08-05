@@ -270,7 +270,7 @@ public class MatchmakingService {
      * @param playerId The player ID
      * @return The MatchRequest object, or null if not found
      */
-    private MatchRequest getMatchRequest(String playerId) {
+    MatchRequest getMatchRequest(String playerId) {
         try {
             Object stored = redisTemplate.opsForHash().get(MATCHMAKING_REQUESTS, playerId);
             log.debug("Retrieved stored data for player {}: {}", playerId, stored);
@@ -430,7 +430,7 @@ public class MatchmakingService {
      * @param matchRequest The match request
      * @return Composite score for queue positioning
      */
-    private double calculateQueueScore(MatchRequest matchRequest) {
+    double calculateQueueScore(MatchRequest matchRequest) {
         long waitTimeSeconds = Instant.now().getEpochSecond() - 
                              matchRequest.getTimestamp().getEpochSecond();
         
@@ -603,7 +603,7 @@ public class MatchmakingService {
      * @param eloB Player B's Elo
      * @return Probability that Player A wins (0.0 to 1.0)
      */
-    private double calculateWinProbability(int eloA, int eloB) {
+    double calculateWinProbability(int eloA, int eloB) {
         double eloDifference = eloA - eloB;
         double expectedScore = 1.0 / (1.0 + Math.pow(10, -eloDifference / 400.0));
         return expectedScore;
