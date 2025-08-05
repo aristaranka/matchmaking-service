@@ -3,8 +3,9 @@ package org.games.matchmakingservice.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Min;
+import lombok.Data;
 
-
+@Data
 public class MatchRequestDto {
 
     @NotBlank(message = "Player ID is required")
