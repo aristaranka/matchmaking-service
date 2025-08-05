@@ -65,15 +65,28 @@ public class MatchmakingService {
      * @return true if successfully enqueued, false otherwise
      */
     public boolean enqueuePlayer(MatchRequest matchRequest) {
+        if (matchRequest == null) {
+            log.warn("Cannot enqueue null match request");
+            return false;
+        }
+        
         try {
             String playerId = matchRequest.getPlayerId();
             double score = calculateQueueScore(matchRequest);
             
+            log.debug("Attempting to enqueue player {} with score {}", playerId, score);
+            
             // Add to sorted set with score (Elo + wait time bonus) for ordering
             redisTemplate.opsForZSet().add(MATCHMAKING_QUEUE, playerId, score);
             
-            // Store full MatchRequest object in hash for metadata preservation
-            redisTemplate.opsForHash().put(MATCHMAKING_REQUESTS, playerId, matchRequest);
+            log.debug("Successfully added player {} to ZSET", playerId);
+            
+            // Store essential data in hash for metadata preservation
+            redisTemplate.opsForHash().put(MATCHMAKING_REQUESTS, playerId, 
+                String.format("{\"playerId\":\"%s\",\"elo\":%d,\"timestamp\":\"%s\"}", 
+                    playerId, matchRequest.getElo(), matchRequest.getTimestamp()));
+            
+            log.debug("Successfully stored MatchRequest for player {}", playerId);
             
             // Set TTL for stale requests (30 minutes)
             redisTemplate.expire(MATCHMAKING_QUEUE, Duration.ofMinutes(30));
@@ -88,7 +101,8 @@ public class MatchmakingService {
             
             return true;
         } catch (Exception e) {
-            log.error("Failed to enqueue player {}", matchRequest.getPlayerId(), e);
+            log.error("Failed to enqueue player {}: {} - Exception type: {}", 
+                matchRequest.getPlayerId(), e.getMessage(), e.getClass().getSimpleName(), e);
             return false;
         }
     }
@@ -100,6 +114,11 @@ public class MatchmakingService {
      * @return true if successfully enqueued, false otherwise
      */
     public boolean enqueuePlayer(MatchRequestDto matchRequestDto) {
+        if (matchRequestDto == null) {
+            log.warn("Cannot enqueue null match request DTO");
+            return false;
+        }
+        
         // Convert DTO to domain object
         MatchRequest matchRequest = MatchRequest.builder()
             .playerId(matchRequestDto.getPlayerId())
@@ -239,7 +258,34 @@ public class MatchmakingService {
      */
     private MatchRequest getMatchRequest(String playerId) {
         try {
-            return (MatchRequest) redisTemplate.opsForHash().get(MATCHMAKING_REQUESTS, playerId);
+            Object stored = redisTemplate.opsForHash().get(MATCHMAKING_REQUESTS, playerId);
+            if (stored instanceof String) {
+                // Parse the JSON string to extract Elo
+                String jsonString = (String) stored;
+                // Simple JSON parsing to extract Elo
+                if (jsonString.contains("\"elo\":")) {
+                    int eloStart = jsonString.indexOf("\"elo\":") + 6;
+                    int eloEnd = jsonString.indexOf(",", eloStart);
+                    if (eloEnd == -1) {
+                        eloEnd = jsonString.indexOf("}", eloStart);
+                    }
+                    if (eloEnd > eloStart) {
+                        int elo = Integer.parseInt(jsonString.substring(eloStart, eloEnd));
+                        return MatchRequest.builder()
+                            .playerId(playerId)
+                            .elo(elo)
+                            .timestamp(Instant.now())
+                            .build();
+                    }
+                }
+                // Fallback to default Elo
+                return MatchRequest.builder()
+                    .playerId(playerId)
+                    .elo(1500) // Default Elo
+                    .timestamp(Instant.now())
+                    .build();
+            }
+            return (MatchRequest) stored;
         } catch (Exception e) {
             log.error("Failed to get match request for player {}", playerId, e);
             return null;
@@ -267,17 +313,25 @@ public class MatchmakingService {
             
             for (int j = i + 1; j < players.size(); j++) {
                 PlayerWithRequest playerB = players.get(j);
-                int eloDifference = Math.abs(playerA.request.getElo() - playerB.request.getElo());
+                int eloA = playerA.request.getElo();
+                int eloB = playerB.request.getElo();
+                int eloDifference = Math.abs(eloA - eloB);
+                
+                log.debug("Checking match: {} (Elo: {}) vs {} (Elo: {}), difference: {}, tolerance: {}", 
+                    playerA.playerId, eloA, playerB.playerId, eloB, eloDifference, eloTolerance);
                 
                 // Check if within tolerance and better than current best
                 if (eloDifference <= eloTolerance && eloDifference < bestEloDifference) {
                     bestPartner = playerB;
                     bestEloDifference = eloDifference;
+                    log.debug("Found compatible match: {} vs {} with difference {}", 
+                        playerA.playerId, playerB.playerId, eloDifference);
                 }
                 
                 // Early termination: if we've found a perfect match (0 difference)
                 // or if the Elo difference is already too large, we can stop searching
-                if (bestEloDifference == 0 || playerB.request.getElo() - playerA.request.getElo() > eloTolerance) {
+                if (bestEloDifference == 0 || eloB - eloA > eloTolerance) {
+                    log.debug("Early termination: perfect match found or Elo difference too large");
                     break;
                 }
             }

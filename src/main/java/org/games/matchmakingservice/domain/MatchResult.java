@@ -33,7 +33,6 @@ public class MatchResult {
     Integer newEloB;
 
     /** when the match was played */
-    @Builder.Default
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
-    Instant playedAt = Instant.now();
+    Instant playedAt;
     }
