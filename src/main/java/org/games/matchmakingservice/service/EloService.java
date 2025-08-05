@@ -1,7 +1,7 @@
 package org.games.matchmakingservice.service;
 
-import lombok.extern.slf4j.Slf4j;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
  * Service for calculating Elo rating changes based on match outcomes.
  * Implements the standard Elo rating system with configurable K-factor.
  */
-@Slf4j
+
 @Service
 public class EloService {
 
@@ -24,6 +24,8 @@ public class EloService {
 
     @Value("${elo.kfactor.master.threshold:2400}")
     private int masterThreshold;
+
+    private static final Logger log = LoggerFactory.getLogger(EloService.class);
 
     /**
      * Calculate the expected score for a player against an opponent.
@@ -65,7 +67,8 @@ public class EloService {
      * @param playerBRating Player B's current rating
      * @param playerAScore Player A's actual score (1.0 for win, 0.5 for draw, 0.0 for loss)
      * @param playerBScore Player B's actual score (1.0 for win, 0.5 for draw, 0.0 for loss)
-     * @param kFactor The K-factor for rating adjustments
+     * @param kFactorA The K-factor for rating adjustments for PlayerA
+     * @param kFactorB The K-factor for rating adjustments for PlayerB
      * @return EloResult containing the new ratings for Player A and Player B
      */
     public EloResult calculateNewRatings(int playerARating, int playerBRating,
@@ -91,7 +94,7 @@ public class EloService {
         // Calculate new ratings
         int newRatingA = playerARating + ratingChangeA;
         int newRatingB = playerBRating + ratingChangeB;
-        
+
         log.debug("Elo calculation: A({} -> {}) B({} -> {}) K={} K={}",
                   playerARating, newRatingA, playerBRating, newRatingB, kFactorA, kFactorB);
 
