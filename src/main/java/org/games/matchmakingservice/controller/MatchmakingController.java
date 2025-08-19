@@ -1,11 +1,12 @@
 package org.games.matchmakingservice.controller;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.games.matchmakingservice.domain.Player;
 import org.games.matchmakingservice.dto.MatchRequestDto;
 import org.games.matchmakingservice.dto.MatchResultDto;
 import org.games.matchmakingservice.service.MatchmakingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +19,6 @@ import java.util.Map;
  * REST API controller for matchmaking operations.
  * Provides endpoints for joining/leaving matchmaking queue and checking status.
  */
-@Slf4j
 @RestController
 @RequestMapping("/api/match")
 @RequiredArgsConstructor
@@ -26,6 +26,8 @@ public class MatchmakingController {
 
     private final MatchmakingService matchmakingService;
 
+
+    private static final Logger log = LoggerFactory.getLogger(MatchmakingController.class);
     /**
      * Join the matchmaking queue.
      * 

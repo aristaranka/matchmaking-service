@@ -156,5 +156,5 @@ public class EloService {
     /**
      * Simple holder for updated Elo ratings.
      */
-    public static record EloResult(int ratingA, int ratingB) {}
+    public record EloResult(int ratingA, int ratingB) {}
 } 

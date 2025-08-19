@@ -17,7 +17,6 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.Gauge;
 
 import java.time.Instant;
 import java.util.*;
