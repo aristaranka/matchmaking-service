@@ -44,6 +44,9 @@ public class MatchmakingService {
 
     private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
 
+    // Runtime control flag to pause/resume matchmaking loop
+    private volatile boolean matchmakingEnabled = true;
+
     // Redis keys
     private static final String MATCHMAKING_QUEUE = "matchmaking:queue";
     private static final String MATCHMAKING_REQUESTS = "matchmaking:requests"; // Hash for full MatchRequest objects
@@ -188,6 +191,10 @@ public class MatchmakingService {
     @Scheduled(fixedRateString = "${app.match.poll-rate-ms:1000}")
     public void processMatchmaking() {
         try {
+            if (!matchmakingEnabled) {
+                log.debug("Matchmaking is paused; skipping this cycle");
+                return;
+            }
             // Process matches until no more pairs can be made
             while (true) {
                 // Get all players in queue sorted by Elo (ascending)
@@ -262,6 +269,29 @@ public class MatchmakingService {
         } catch (Exception e) {
             log.error("Match loop failed", e);
         }
+    }
+
+    /**
+     * Pause the automatic matchmaking loop.
+     */
+    public void pauseMatchmaking() {
+        matchmakingEnabled = false;
+        log.info("Matchmaking has been paused");
+    }
+
+    /**
+     * Resume the automatic matchmaking loop.
+     */
+    public void resumeMatchmaking() {
+        matchmakingEnabled = true;
+        log.info("Matchmaking has been resumed");
+    }
+
+    /**
+     * Check if matchmaking loop is enabled.
+     */
+    public boolean isMatchmakingEnabled() {
+        return matchmakingEnabled;
     }
 
     /**

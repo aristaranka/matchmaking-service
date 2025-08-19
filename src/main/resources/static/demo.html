@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Matchmaking Demo</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="demo.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <script>
+    window.__MM_API__ = {
+      pause: '/api/match/pause',
+      resume: '/api/match/resume',
+      enabled: '/api/match/enabled'
+    };
+  </script>
+</head>
+<body>
+  <h1>Matchmaking Demo</h1>
+
+  <fieldset>
+    <legend>Connection</legend>
+    <div class="row">
+      <span>WebSocket Endpoint:</span>
+      <code id="ws-endpoint">/ws-match</code>
+    </div>
+    <div class="row">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+      <span class="status" id="connStatus">Disconnected</span>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Enqueue</legend>
+    <div class="row">
+      <label for="playerId">Player ID</label>
+      <input id="playerId" type="text" placeholder="player-1234" />
+      <label for="elo">Elo</label>
+      <input id="elo" type="number" min="0" value="1200" />
+    </div>
+    <div class="row">
+      <button id="joinBtn">Join Queue</button>
+      <span id="enqueueResult" class="small"></span>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Leave Queue</legend>
+    <div class="row">
+      <label for="leavePlayerId">Player ID</label>
+      <input id="leavePlayerId" type="text" placeholder="player-1234" />
+      <button id="leaveBtn">Leave Queue</button>
+      <span id="leaveResult" class="small"></span>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Queue Snapshot</legend>
+    <div class="row">
+      <button id="refreshQueueBtn">Refresh</button>
+      <label style="min-width:auto"><input id="autoRefreshChk" type="checkbox" /> Auto refresh</label>
+      <select id="autoRefreshMs">
+        <option value="2000">2s</option>
+        <option value="3000" selected>3s</option>
+        <option value="5000">5s</option>
+        <option value="10000">10s</option>
+      </select>
+      <span class="small">Queue size: <strong id="queueCount">0</strong></span>
+    </div>
+    <table id="queueTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player ID</th>
+          <th>Username</th>
+          <th>Elo</th>
+          <th>Online</th>
+          <th>Last Active</th>
+        </tr>
+      </thead>
+      <tbody id="queueBody"></tbody>
+    </table>
+  </fieldset>
+
+  <fieldset>
+    <legend>Live Matches</legend>
+    <div class="small">Subscribed topic: <code>/topic/matches</code></div>
+    <table id="matches">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Match ID</th>
+          <th>Player A</th>
+          <th>Player B</th>
+          <th>Winner</th>
+          <th>Elo A</th>
+          <th>Elo B</th>
+          <th>New Elo A</th>
+          <th>New Elo B</th>
+        </tr>
+      </thead>
+      <tbody id="matchesBody"></tbody>
+    </table>
+  </fieldset>
+
+  <fieldset>
+    <legend>Log</legend>
+    <div id="log"></div>
+  </fieldset>
+
+  <script src="demo.js"></script>
+</body>
+</html>
+
+

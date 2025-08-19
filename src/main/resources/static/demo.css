@@ -1,0 +1,17 @@
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; margin: 24px; }
+h1 { font-size: 20px; margin: 0 0 16px; }
+fieldset { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin: 0 0 16px; }
+legend { padding: 0 6px; }
+label { display: inline-block; min-width: 100px; }
+input { padding: 6px 8px; }
+button { padding: 6px 10px; margin-right: 8px; }
+.row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.status { font-weight: 600; }
+.ok { color: #0a7c28; }
+.bad { color: #a11; }
+#matches, #queueTable { width: 100%; border-collapse: collapse; margin-top: 8px; }
+#matches th, #matches td, #queueTable th, #queueTable td { border: 1px solid #999; padding: 6px 8px; text-align: left; }
+#log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; border: 1px solid #999; border-radius: 6px; padding: 8px; max-height: 200px; overflow: auto; }
+.small { font-size: 12px; opacity: 0.8; }
+

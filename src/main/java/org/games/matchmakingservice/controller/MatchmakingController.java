@@ -224,4 +224,42 @@ public class MatchmakingController {
             "timestamp", System.currentTimeMillis()
         ));
     }
+
+    /**
+     * Pause automatic matchmaking processing.
+     */
+    @PostMapping("/pause")
+    public ResponseEntity<Map<String, Object>> pauseMatchmaking() {
+        matchmakingService.pauseMatchmaking();
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Matchmaking paused",
+            "enabled", false
+        ));
+    }
+
+    /**
+     * Resume automatic matchmaking processing.
+     */
+    @PostMapping("/resume")
+    public ResponseEntity<Map<String, Object>> resumeMatchmaking() {
+        matchmakingService.resumeMatchmaking();
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Matchmaking resumed",
+            "enabled", true
+        ));
+    }
+
+    /**
+     * Get current matchmaking enabled/paused state.
+     */
+    @GetMapping("/enabled")
+    public ResponseEntity<Map<String, Object>> getEnabled() {
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "enabled", matchmakingService.isMatchmakingEnabled(),
+            "timestamp", System.currentTimeMillis()
+        ));
+    }
 } 
