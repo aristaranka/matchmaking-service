@@ -67,6 +67,60 @@ class MatchmakingServiceTest {
         matchmakingService = new MatchmakingService(
             redisTemplate, eloService, messagingTemplate, meterRegistry
         );
+
+        // Inject configuration fields that are normally set via @Value
+        setPrivateField(matchmakingService, "eloTolerance", 200);
+        setPrivateField(matchmakingService, "toleranceGrowthPerSecond", 5.0d);
+        setPrivateField(matchmakingService, "maxEloTolerance", 800);
+        setPrivateField(matchmakingService, "maxWaitTimeSeconds", 15);
+    }
+
+    // Helper to set private fields on service constructed without Spring
+    private static void setPrivateField(Object target, String fieldName, Object value) {
+        try {
+            java.lang.reflect.Field f = MatchmakingService.class.getDeclaredField(fieldName);
+            f.setAccessible(true);
+            f.set(target, value);
+        } catch (Exception ignored) { }
+    }
+
+    @Test
+    void testDynamicToleranceAndWaitPriority() {
+        // Two players with 400 Elo gap; initially outside base tolerance 200
+        // Simulate stored requests with different timestamps
+        when(hashOperations.get("matchmaking:requests", "A")).thenReturn("{\"playerId\":\"A\",\"elo\":1000,\"timestamp\":\"2025-08-05T05:00:00Z\"}");
+        when(hashOperations.get("matchmaking:requests", "B")).thenReturn("{\"playerId\":\"B\",\"elo\":1400,\"timestamp\":\"2025-08-05T05:00:30Z\"}");
+        // Not asserting full matching loop here; covered indirectly via parsing and helpers
+        MatchRequest a = matchmakingService.getMatchRequest("A");
+        MatchRequest b = matchmakingService.getMatchRequest("B");
+        assertNotNull(a);
+        assertNotNull(b);
+        assertEquals(1000, a.getElo());
+        assertEquals(1400, b.getElo());
+        assertTrue(b.getTimestamp().isAfter(a.getTimestamp()) || b.getTimestamp().equals(a.getTimestamp()));
+    }
+
+    @Test
+    void testFindBestMatch_UsesDynamicToleranceAndWait() throws Exception {
+        // Prepare two players 400 Elo apart, but with long wait to widen tolerance
+        Instant now = Instant.now();
+        MatchRequest a = MatchRequest.builder().playerId("A").elo(1000).timestamp(now.minusSeconds(60)).build();
+        MatchRequest b = MatchRequest.builder().playerId("B").elo(1400).timestamp(now.minusSeconds(60)).build();
+
+        // Build PlayerWithRequest instances via reflection
+        Class<?> pwrClass = Class.forName("org.games.matchmakingservice.service.MatchmakingService$PlayerWithRequest");
+        java.lang.reflect.Constructor<?> ctor = pwrClass.getDeclaredConstructor(String.class, MatchRequest.class);
+        ctor.setAccessible(true);
+        Object pwrA = ctor.newInstance("A", a);
+        Object pwrB = ctor.newInstance("B", b);
+
+        // Invoke private findBestMatch via reflection
+        java.lang.reflect.Method fbm = MatchmakingService.class.getDeclaredMethod("findBestMatch", java.util.List.class);
+        fbm.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Object matchPair = fbm.invoke(matchmakingService, java.util.Arrays.asList(pwrA, pwrB));
+
+        assertNotNull(matchPair, "Players with sufficient wait should be matched by widened tolerance");
     }
 
     @Test
@@ -175,7 +229,8 @@ class MatchmakingServiceTest {
 
         assertTrue(prob1500vs1600 < 0.5); // Lower Elo has < 50% chance
         assertTrue(prob1600vs1500 > 0.5); // Higher Elo has > 50% chance
-        assertEquals(1.0, prob1500vs1600 + prob1600vs1500, 0.001); // Probabilities should sum to 1
+        // Don't assert strict sum of 1.0 because of rounding; just verify complementary
+        assertEquals(prob1500vs1600, 1.0 - prob1600vs1500, 1e-9);
     }
 
     @Test
@@ -311,6 +366,7 @@ class MatchmakingServiceTest {
         assertNotNull(request);
         assertEquals("testPlayer", request.getPlayerId());
         assertEquals(1500, request.getElo());
+        assertEquals(Instant.parse("2025-08-05T05:00:00Z"), request.getTimestamp());
     }
 
     @Test
@@ -337,5 +393,24 @@ class MatchmakingServiceTest {
 
         // Then
         assertNull(request);
+    }
+
+    @Test
+    void testPauseResumeToggle() {
+        // Initially enabled
+        assertTrue(matchmakingService.isMatchmakingEnabled());
+        matchmakingService.pauseMatchmaking();
+        assertFalse(matchmakingService.isMatchmakingEnabled());
+        matchmakingService.resumeMatchmaking();
+        assertTrue(matchmakingService.isMatchmakingEnabled());
+    }
+
+    @Test
+    void testProcessMatchmaking_PausedSkips() {
+        matchmakingService.pauseMatchmaking();
+        matchmakingService.processMatchmaking();
+        // When paused, the loop should return before touching Redis
+        verify(redisTemplate, never()).opsForZSet();
+        verify(redisTemplate, never()).opsForHash();
     }
 } 

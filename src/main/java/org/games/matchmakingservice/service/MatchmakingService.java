@@ -63,6 +63,12 @@ public class MatchmakingService {
     @Value("${match.elo-tolerance:200}")
     private int eloTolerance; // Maximum Elo difference for matching
 
+    @Value("${match.elo-tolerance-growth-per-second:5}")
+    private double toleranceGrowthPerSecond; // How much to widen tolerance per second waited
+
+    @Value("${match.elo-tolerance-max:800}")
+    private int maxEloTolerance; // Cap on widened tolerance
+
     /**
      * Enqueue a player into the matchmaking queue.
      * 
@@ -205,7 +211,7 @@ public class MatchmakingService {
                     break; // Not enough players for a match
                 }
                 
-                // Convert to list and sort by Elo
+                // Convert to list and prioritize by wait duration, then Elo
                 List<PlayerWithRequest> players = playersWithScores.stream()
                     .map(tuple -> {
                         String playerId = tuple.getValue().toString();
@@ -213,7 +219,9 @@ public class MatchmakingService {
                         return new PlayerWithRequest(playerId, request);
                     })
                     .filter(player -> player.request != null) // Filter out any missing requests
-                    .sorted(Comparator.comparingInt(player -> player.request.getElo()))
+                    .sorted(Comparator
+                        .<PlayerWithRequest>comparingLong(p -> getWaitSeconds(p.request)).reversed()
+                        .thenComparingInt(p -> p.request.getElo()))
                     .toList();
                 
                 // Find the best match
@@ -306,11 +314,12 @@ public class MatchmakingService {
             log.debug("Retrieved stored data for player {}: {}", playerId, stored);
             
             if (stored instanceof String) {
-                // Parse the JSON string to extract Elo
+                // Parse the JSON string to extract Elo and timestamp
                 String jsonString = (String) stored;
                 log.debug("Parsing JSON string: {}", jsonString);
                 
-                // Simple JSON parsing to extract Elo
+                // Extract Elo
+                Integer elo = null;
                 if (jsonString.contains("\"elo\":")) {
                     int eloStart = jsonString.indexOf("\"elo\":") + 6;
                     int eloEnd = jsonString.indexOf(",", eloStart);
@@ -318,15 +327,33 @@ public class MatchmakingService {
                         eloEnd = jsonString.indexOf("}", eloStart);
                     }
                     if (eloEnd > eloStart) {
-                        int elo = Integer.parseInt(jsonString.substring(eloStart, eloEnd));
-                        log.debug("Extracted Elo {} for player {}", elo, playerId);
-                        return MatchRequest.builder()
-                            .playerId(playerId)
-                            .elo(elo)
-                            .timestamp(Instant.now())
-                            .build();
+                        elo = Integer.parseInt(jsonString.substring(eloStart, eloEnd));
                     }
                 }
+                // Extract timestamp
+                Instant ts = Instant.now();
+                try {
+                    String tsKey = "\"timestamp\":\"";
+                    int tsStart = jsonString.indexOf(tsKey);
+                    if (tsStart >= 0) {
+                        tsStart += tsKey.length();
+                        int tsEnd = jsonString.indexOf("\"", tsStart);
+                        if (tsEnd > tsStart) {
+                            String tsStr = jsonString.substring(tsStart, tsEnd);
+                            ts = Instant.parse(tsStr);
+                        }
+                    }
+                } catch (Exception ignored) {}
+                
+                if (elo != null) {
+                    log.debug("Extracted Elo {} and timestamp {} for player {}", elo, ts, playerId);
+                    return MatchRequest.builder()
+                        .playerId(playerId)
+                        .elo(elo)
+                        .timestamp(ts)
+                        .build();
+                }
+                
                 log.warn("Could not parse Elo from JSON string: {}", jsonString);
                 // Fallback to default Elo
                 return MatchRequest.builder()
@@ -354,13 +381,14 @@ public class MatchmakingService {
             return null;
         }
         
-        // For each player, find the closest compatible partner
+        // For each player, find the partner within dynamic tolerance, prioritizing longer waits
         for (int i = 0; i < players.size() - 1; i++) {
             PlayerWithRequest playerA = players.get(i);
             
-            // Find the closest compatible partner within Elo tolerance
+            // Find compatible partner within dynamic tolerance
             PlayerWithRequest bestPartner = null;
             int bestEloDifference = Integer.MAX_VALUE;
+            long bestMinWait = -1;
             
             for (int j = i + 1; j < players.size(); j++) {
                 PlayerWithRequest playerB = players.get(j);
@@ -368,22 +396,24 @@ public class MatchmakingService {
                 int eloB = playerB.request.getElo();
                 int eloDifference = Math.abs(eloA - eloB);
                 
-                log.debug("Checking match: {} (Elo: {}) vs {} (Elo: {}), difference: {}, tolerance: {}", 
-                    playerA.playerId, eloA, playerB.playerId, eloB, eloDifference, eloTolerance);
+                int tolA = computeDynamicTolerance(playerA.request);
+                int tolB = computeDynamicTolerance(playerB.request);
+                int allowedDifference = Math.min(tolA, tolB);
                 
-                // Check if within tolerance and better than current best
-                if (eloDifference <= eloTolerance && eloDifference < bestEloDifference) {
-                    bestPartner = playerB;
-                    bestEloDifference = eloDifference;
-                    log.debug("Found compatible match: {} vs {} with difference {}", 
-                        playerA.playerId, playerB.playerId, eloDifference);
-                }
+                log.debug("Checking match: {} (Elo: {}) vs {} (Elo: {}), diff: {}, allowed: {} (tolA: {}, tolB: {})", 
+                    playerA.playerId, eloA, playerB.playerId, eloB, eloDifference, allowedDifference, tolA, tolB);
                 
-                // Early termination: if we've found a perfect match (0 difference)
-                // or if the Elo difference is already too large, we can stop searching
-                if (bestEloDifference == 0 || eloB - eloA > eloTolerance) {
-                    log.debug("Early termination: perfect match found or Elo difference too large");
-                    break;
+                if (eloDifference <= allowedDifference) {
+                    long waitA = getWaitSeconds(playerA.request);
+                    long waitB = getWaitSeconds(playerB.request);
+                    long minWait = Math.min(waitA, waitB);
+                    if (bestPartner == null || minWait > bestMinWait || (minWait == bestMinWait && eloDifference < bestEloDifference)) {
+                        bestPartner = playerB;
+                        bestEloDifference = eloDifference;
+                        bestMinWait = minWait;
+                        log.debug("Found compatible match: {} vs {} with diff {} (minWait {}s)", 
+                            playerA.playerId, playerB.playerId, eloDifference, minWait);
+                    }
                 }
             }
             
@@ -395,6 +425,21 @@ public class MatchmakingService {
         }
         
         return null; // No compatible matches found
+    }
+
+    private long getWaitSeconds(MatchRequest request) {
+        try {
+            return Math.max(0L, Duration.between(request.getTimestamp(), Instant.now()).getSeconds());
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private int computeDynamicTolerance(MatchRequest request) {
+        long waitSeconds = getWaitSeconds(request);
+        long widened = Math.round(toleranceGrowthPerSecond * waitSeconds);
+        long candidate = (long) eloTolerance + widened;
+        return (int) Math.min(candidate, maxEloTolerance);
     }
 
     /**

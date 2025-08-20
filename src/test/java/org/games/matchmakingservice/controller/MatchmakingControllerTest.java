@@ -326,4 +326,43 @@ class MatchmakingControllerTest {
         assertEquals("matchmaking", body.get("service"));
         assertNotNull(body.get("timestamp"));
     }
+
+    @Test
+    void testPauseEndpoint() {
+        // When
+        ResponseEntity<Map<String, Object>> response = controller.pauseMatchmaking();
+
+        // Then
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        Map<String, Object> body = response.getBody();
+        assertNotNull(body);
+        assertTrue((Boolean) body.get("success"));
+        assertEquals(false, body.get("enabled"));
+        verify(matchmakingService).pauseMatchmaking();
+    }
+
+    @Test
+    void testResumeEndpoint() {
+        // When
+        ResponseEntity<Map<String, Object>> response = controller.resumeMatchmaking();
+
+        // Then
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        Map<String, Object> body = response.getBody();
+        assertNotNull(body);
+        assertTrue((Boolean) body.get("success"));
+        assertEquals(true, body.get("enabled"));
+        verify(matchmakingService).resumeMatchmaking();
+    }
+
+    @Test
+    void testEnabledEndpoint() {
+        when(matchmakingService.isMatchmakingEnabled()).thenReturn(true);
+        ResponseEntity<Map<String, Object>> response = controller.getEnabled();
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        Map<String, Object> body = response.getBody();
+        assertNotNull(body);
+        assertTrue((Boolean) body.get("success"));
+        assertEquals(true, body.get("enabled"));
+    }
 } 
