@@ -17,10 +17,15 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.games.matchmakingservice.domain.MatchEntity;
+import org.games.matchmakingservice.domain.PlayerStats;
+import org.games.matchmakingservice.repository.MatchRepository;
+import org.games.matchmakingservice.repository.PlayerStatsRepository;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +46,8 @@ public class MatchmakingService {
     private final EloService eloService;
     private final SimpMessagingTemplate messagingTemplate;
     private final MeterRegistry meterRegistry;
+    private final MatchRepository matchRepository;
+    private final PlayerStatsRepository playerStatsRepository;
 
     private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
 
@@ -486,6 +493,9 @@ public class MatchmakingService {
             
             // Broadcast result
             broadcastMatchResult(matchResult);
+
+            // Persist to database and update player stats
+            persistMatchAndStats(matchResult);
             
             // Schedule match end
             scheduleMatchEnd(matchId);
@@ -497,6 +507,51 @@ public class MatchmakingService {
         } catch (Exception e) {
             log.error("Failed to create match between {} and {}", playerA, playerB, e);
         }
+    }
+
+    private void persistMatchAndStats(MatchResult matchResult) {
+        try {
+            // Save match row
+            MatchEntity entity = new MatchEntity();
+            entity.setMatchId(matchResult.getMatchId());
+            entity.setPlayerA(matchResult.getPlayerA());
+            entity.setPlayerB(matchResult.getPlayerB());
+            entity.setOldEloA(matchResult.getOldEloA());
+            entity.setOldEloB(matchResult.getOldEloB());
+            entity.setNewEloA(matchResult.getNewEloA());
+            entity.setNewEloB(matchResult.getNewEloB());
+            entity.setWinner(matchResult.getWinner());
+            entity.setPlayedAt(matchResult.getPlayedAt());
+            matchRepository.save(entity);
+
+            // Update stats for both players
+            boolean aWon = matchResult.getWinner().equals(matchResult.getPlayerA());
+            updatePlayerStatsForResult(matchResult.getPlayerA(), matchResult.getNewEloA(), aWon);
+            updatePlayerStatsForResult(matchResult.getPlayerB(), matchResult.getNewEloB(), !aWon);
+        } catch (Exception e) {
+            log.error("Failed to persist match and stats {}", matchResult.getMatchId(), e);
+        }
+    }
+
+    private void updatePlayerStatsForResult(String playerId, int newElo, boolean won) {
+        PlayerStats stats = playerStatsRepository.findById(playerId).orElseGet(() -> {
+            PlayerStats s = new PlayerStats();
+            s.setPlayerId(playerId);
+            s.setUsername(playerId);
+            s.setCurrentElo(newElo);
+            s.setWins(0L);
+            s.setLosses(0L);
+            s.setGames(0L);
+            return s;
+        });
+        stats.setCurrentElo(newElo);
+        stats.setGames(stats.getGames() + 1);
+        if (won) {
+            stats.setWins(stats.getWins() + 1);
+        } else {
+            stats.setLosses(stats.getLosses() + 1);
+        }
+        playerStatsRepository.save(stats);
     }
 
     /**
@@ -836,6 +891,68 @@ public class MatchmakingService {
             return results;
         } catch (Exception e) {
             log.error("Failed to get recent match results", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Get recent matches for a player or overall history from DB.
+     */
+    public List<MatchResultDto> getMatchHistory(String playerId, int limit) {
+        try {
+            List<MatchEntity> entities;
+            if (playerId == null || playerId.isBlank()) {
+                entities = matchRepository.findTop50ByOrderByPlayedAtDesc();
+            } else {
+                entities = matchRepository.findByPlayerAOrPlayerBOrderByPlayedAtDesc(playerId, playerId);
+            }
+            return entities.stream()
+                .limit(limit)
+                .map(this::convertEntityToDto)
+                .toList();
+        } catch (Exception e) {
+            log.error("Failed to get match history for {}", playerId, e);
+            return List.of();
+        }
+    }
+
+    private MatchResultDto convertEntityToDto(MatchEntity entity) {
+        return MatchResultDto.builder()
+            .matchId(entity.getMatchId())
+            .playerA(entity.getPlayerA())
+            .playerB(entity.getPlayerB())
+            .oldEloA(entity.getOldEloA())
+            .oldEloB(entity.getOldEloB())
+            .newEloA(entity.getNewEloA())
+            .newEloB(entity.getNewEloB())
+            .winner(entity.getWinner())
+            .playedAt(entity.getPlayedAt())
+            .build();
+    }
+
+    /**
+     * Get a basic leaderboard ordered by current Elo.
+     */
+    public List<Map<String, Object>> getLeaderboard(int limit) {
+        try {
+            List<PlayerStats> top = playerStatsRepository.findTop100ByOrderByCurrentEloDesc();
+            if (limit > 0 && top.size() > limit) {
+                top = top.subList(0, limit);
+            }
+            int[] rank = {1};
+            return top.stream().map(s -> {
+                Map<String, Object> m = new HashMap<>();
+                m.put("rank", rank[0]++);
+                m.put("playerId", s.getPlayerId());
+                m.put("username", s.getUsername());
+                m.put("elo", s.getCurrentElo());
+                m.put("wins", s.getWins());
+                m.put("losses", s.getLosses());
+                m.put("games", s.getGames());
+                return m;
+            }).toList();
+        } catch (Exception e) {
+            log.error("Failed to get leaderboard", e);
             return List.of();
         }
     }

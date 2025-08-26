@@ -212,6 +212,46 @@ public class MatchmakingController {
     }
 
     /**
+     * Get DB-backed match history (optionally filtered by player).
+     */
+    @GetMapping("/history")
+    public ResponseEntity<Map<String, Object>> getHistory(
+            @RequestParam(required = false) String playerId,
+            @RequestParam(defaultValue = "20") int limit) {
+        try {
+            List<MatchResultDto> results = matchmakingService.getMatchHistory(playerId, limit);
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "results", results,
+                "count", results.size()
+            ));
+        } catch (Exception e) {
+            log.error("Error getting history", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("success", false, "message", "Internal server error"));
+        }
+    }
+
+    /**
+     * Get leaderboard ordered by Elo.
+     */
+    @GetMapping("/leaderboard")
+    public ResponseEntity<Map<String, Object>> leaderboard(@RequestParam(defaultValue = "50") int limit) {
+        try {
+            List<Map<String, Object>> board = matchmakingService.getLeaderboard(limit);
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "leaders", board,
+                "count", board.size()
+            ));
+        } catch (Exception e) {
+            log.error("Error getting leaderboard", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("success", false, "message", "Internal server error"));
+        }
+    }
+
+    /**
      * Health check endpoint.
      * 
      * @return Simple health status

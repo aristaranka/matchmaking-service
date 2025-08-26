@@ -17,6 +17,8 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Counter;
+import org.games.matchmakingservice.repository.MatchRepository;
+import org.games.matchmakingservice.repository.PlayerStatsRepository;
 
 import java.time.Instant;
 import java.util.*;
@@ -52,6 +54,12 @@ class MatchmakingServiceTest {
     @Mock
     private Counter counter;
 
+    @Mock
+    private MatchRepository matchRepository;
+
+    @Mock
+    private PlayerStatsRepository playerStatsRepository;
+
     private MatchmakingService matchmakingService;
 
     @BeforeEach
@@ -65,7 +73,8 @@ class MatchmakingServiceTest {
         lenient().when(meterRegistry.counter(anyString())).thenReturn(counter);
 
         matchmakingService = new MatchmakingService(
-            redisTemplate, eloService, messagingTemplate, meterRegistry
+            redisTemplate, eloService, messagingTemplate, meterRegistry,
+            matchRepository, playerStatsRepository
         );
 
         // Inject configuration fields that are normally set via @Value
