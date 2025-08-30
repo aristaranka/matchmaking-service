@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication Success - Matchmaking Service</title>
+    <link rel="stylesheet" href="demo.css">
+    <style>
+        .success-container {
+            max-width: 600px;
+            margin: 100px auto;
+            padding: 40px;
+            border: 1px solid #28a745;
+            border-radius: 8px;
+            background: white;
+            text-align: center;
+        }
+        .success-icon {
+            color: #28a745;
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .success-message {
+            color: #155724;
+            margin-bottom: 30px;
+        }
+        .redirect-info {
+            color: #6c757d;
+            margin-bottom: 30px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 10px;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .btn-success {
+            background: #28a745;
+        }
+        .btn-success:hover {
+            background: #1e7e34;
+        }
+    </style>
+</head>
+<body>
+    <div class="success-container">
+        <div class="success-icon">✓</div>
+        <h2 class="success-message">Authentication Successful!</h2>
+        <p class="redirect-info">You have been successfully logged in. Redirecting to the home page...</p>
+        <div>
+            <a href="#" id="go-home-btn" class="btn btn-success">Go to Home Page</a>
+            <a href="/login" class="btn">Back to Login</a>
+        </div>
+    </div>
+
+    <script>
+        // Check if we have the authentication token
+        function checkAuth() {
+            const token = localStorage.getItem('authToken');
+            const username = localStorage.getItem('username');
+            
+            if (!token || !username) {
+                // No token, redirect to login
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Validate the token
+            fetch('/api/auth/validate', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.valid) {
+                    // Token is valid, redirect to home page after a brief delay
+                    setTimeout(() => {
+                        window.location.href = '/home';
+                    }, 2000);
+                } else {
+                    // Token is invalid, redirect to login
+                    localStorage.removeItem('authToken');
+                    localStorage.removeItem('username');
+                    window.location.href = '/login';
+                }
+            })
+            .catch(() => {
+                // Error validating token, redirect to login
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('username');
+                window.location.href = '/login';
+            });
+        }
+        
+        // Manual redirect to home page
+        document.getElementById('go-home-btn').addEventListener('click', function(e) {
+            e.preventDefault();
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                window.location.href = '/home';
+            } else {
+                window.location.href = '/login';
+            }
+        });
+        
+        // Check authentication on page load
+        checkAuth();
+    </script>
+</body>
+</html>

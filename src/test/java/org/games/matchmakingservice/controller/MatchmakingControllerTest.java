@@ -328,6 +328,92 @@ class MatchmakingControllerTest {
     }
 
     @Test
+    void testGetHistory_Success() {
+        MatchResultDto dto = MatchResultDto.builder()
+            .matchId("m1")
+            .playerA("alice")
+            .playerB("bob")
+            .oldEloA(1200)
+            .oldEloB(1210)
+            .newEloA(1216)
+            .newEloB(1194)
+            .winner("alice")
+            .playedAt(Instant.now())
+            .build();
+
+        when(matchmakingService.getMatchHistory("alice", 10)).thenReturn(List.of(dto));
+
+        ResponseEntity<Map<String, Object>> response = controller.getHistory("alice", 10);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        Map<String, Object> body = response.getBody();
+        assertNotNull(body);
+        assertEquals(true, body.get("success"));
+        @SuppressWarnings("unchecked")
+        List<MatchResultDto> results = (List<MatchResultDto>) body.get("results");
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertEquals("m1", results.get(0).getMatchId());
+    }
+
+    @Test
+    void testGetHistory_Exception() {
+        when(matchmakingService.getMatchHistory(null, 20)).thenThrow(new RuntimeException("Test"));
+
+        ResponseEntity<Map<String, Object>> response = controller.getHistory(null, 20);
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        Map<String, Object> body = response.getBody();
+        assertNotNull(body);
+        assertEquals(false, body.get("success"));
+    }
+
+    @Test
+    void testLeaderboard_Success() {
+        Map<String, Object> row1 = Map.of(
+            "rank", 1,
+            "playerId", "bob",
+            "username", "bob",
+            "elo", 1300,
+            "wins", 10L,
+            "losses", 2L,
+            "games", 12L
+        );
+        Map<String, Object> row2 = Map.of(
+            "rank", 2,
+            "playerId", "alice",
+            "username", "alice",
+            "elo", 1280,
+            "wins", 8L,
+            "losses", 4L,
+            "games", 12L
+        );
+
+        when(matchmakingService.getLeaderboard(5)).thenReturn(List.of(row1, row2));
+
+        ResponseEntity<Map<String, Object>> response = controller.leaderboard(5);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        Map<String, Object> body = response.getBody();
+        assertNotNull(body);
+        assertEquals(true, body.get("success"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> leaders = (List<Map<String, Object>>) body.get("leaders");
+        assertNotNull(leaders);
+        assertEquals(2, leaders.size());
+        assertEquals(1, leaders.get(0).get("rank"));
+        assertEquals("bob", leaders.get(0).get("playerId"));
+    }
+
+    @Test
+    void testLeaderboard_Exception() {
+        when(matchmakingService.getLeaderboard(10)).thenThrow(new RuntimeException("Test"));
+
+        ResponseEntity<Map<String, Object>> response = controller.leaderboard(10);
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        Map<String, Object> body = response.getBody();
+        assertNotNull(body);
+        assertEquals(false, body.get("success"));
+    }
+
+    @Test
     void testPauseEndpoint() {
         // When
         ResponseEntity<Map<String, Object>> response = controller.pauseMatchmaking();

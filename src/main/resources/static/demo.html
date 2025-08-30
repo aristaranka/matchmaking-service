@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Matchmaking Demo</title>
+  <title>Matchmaking Service - Home</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="stylesheet" href="demo.css" />
   <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
@@ -15,9 +15,57 @@
       enabled: '/api/match/enabled'
     };
   </script>
+  
+  <style>
+    .auth-status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 12px;
+      z-index: 1000;
+    }
+    .auth-status .user-info {
+      margin-bottom: 5px;
+    }
+    .auth-status .logout-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .auth-status .logout-btn:hover {
+      background: #c82333;
+    }
+    .login-link {
+      color: #007bff;
+      text-decoration: none;
+    }
+    .login-link:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-  <h1>Matchmaking Demo</h1>
+  <!-- Authentication Status -->
+      <div class="auth-status" id="auth-status">
+      <div class="user-info" id="user-info">
+        <a href="/login" class="login-link">Login</a>
+      </div>
+    </div>
+
+  <h1>Matchmaking Service</h1>
+  
+  <div id="auth-notice" style="display: none; background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0; border-radius: 4px; text-align: center;">
+    <strong>Authentication Required</strong><br>
+    Please <a href="/login">login</a> to access the matchmaking service.
+  </div>
 
   <fieldset>
     <legend>Connection</legend>
