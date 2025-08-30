@@ -1,0 +1,129 @@
+/* Enhanced login page styling with demo.css integration */
+.auth-container {
+    max-width: 450px;
+    margin: 50px auto;
+    padding: 30px;
+    border: 1px solid #ccc;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.auth-container h2 {
+    color: black;
+    text-align: center;
+    margin-bottom: 25px;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    color: black;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 16px;
+    transition: border-color 0.3s ease;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.btn {
+    width: 100%;
+    padding: 14px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: background-color 0.3s ease;
+}
+
+.btn:hover {
+    background: #0056b3;
+    transform: translateY(-1px);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.toggle-form {
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+.toggle-form a {
+    color: #007bff;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.toggle-form a:hover {
+    color: #0056b3;
+    text-decoration: underline;
+}
+
+.error {
+    color: #a11;
+    margin-bottom: 15px;
+    padding: 12px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.success {
+    color: #0a7c28;
+    margin-bottom: 15px;
+    padding: 12px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+/* Responsive design */
+@media (max-width: 480px) {
+    .auth-container {
+        margin: 20px;
+        padding: 20px;
+    }
+    
+    .auth-container h2 {
+        font-size: 20px;
+    }
+    
+    .form-group input {
+        padding: 10px;
+        font-size: 14px;
+    }
+    
+    .btn {
+        padding: 12px;
+        font-size: 14px;
+    }
+}

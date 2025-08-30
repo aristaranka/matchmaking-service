@@ -16,11 +16,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    // private final JwtAuthenticationFilter jwtAuthFilter;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-    }
+    // public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter) {
+    //     this.jwtAuthFilter = jwtAuthFilter;
+    // }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -29,34 +29,10 @@ public class SecurityConfig {
             .cors(cors -> {})
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(registry -> registry
-                .requestMatchers(
-                    "/", 
-                    "/index.html", 
-                    "/home",
-                    "/demo.html", 
-                    "/demo.js", 
-                    "/demo.css",
-                    "/login",
-                    "/login.html",
-                    "/auth-success",
-                    "/auth-success.html",
-                    "/static/**", 
-                    "/h2-console/**",
-                    "/actuator/**",
-                    "/api/auth/register",
-                    "/api/auth/login",
-                    "/ws-match/**"
-                ).permitAll()
-                .requestMatchers(
-                    "/api/match/status", 
-                    "/api/match/leaderboard", 
-                    "/api/match/history"
-                ).permitAll()
-                .anyRequest().authenticated()
+                // Temporarily allow all requests for debugging
+                .anyRequest().permitAll()
             )
             .headers(h -> h.frameOptions(f -> f.disable()));
-
-        http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

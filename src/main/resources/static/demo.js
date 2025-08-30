@@ -126,8 +126,14 @@
   function setConnected(connected) {
     $("connectBtn").disabled = connected;
     $("disconnectBtn").disabled = !connected;
-    $("connStatus").textContent = connected ? "Connected" : "Disconnected";
+    $("connStatus").textContent = connected ? "Connected (Matchmaking Active)" : "Disconnected (Matchmaking Paused)";
     $("connStatus").className = `status ${connected ? "ok" : "bad"}`;
+    
+    if (connected) {
+      log('🔗 WebSocket connected - matchmaking will now process queued players');
+    } else {
+      log('❌ WebSocket disconnected - players can queue but will not be matched until reconnection');
+    }
   }
 
   function randomId() {
@@ -166,15 +172,21 @@
     stompClient.debug = null; // silence console spam
     
     const headers = { Authorization: `Bearer ${authToken}` };
+    log(`Attempting WebSocket connection with auth token: ${authToken ? 'present' : 'missing'}`);
     stompClient.connect(headers, async function (frame) {
       setConnected(true);
-      log(`Connected: ${frame}`);
+      log(`WebSocket Connected successfully: ${frame}`);
       // resume matchmaking when client connects
-      try { await fetch(window.__MM_API__?.resume || '/api/match/resume', { method: 'POST', headers: { Authorization: `Bearer ${authToken}` } }); } catch (_) {}
+      try { 
+        const response = await fetch(window.__MM_API__?.resume || '/api/match/resume', { method: 'POST', headers: { Authorization: `Bearer ${authToken}` } }); 
+        log(`Matchmaking resumed: ${response.status}`);
+      } catch (e) { 
+        log(`Failed to resume matchmaking: ${e}`);
+      }
       subscribe();
     }, function (error) {
       setConnected(false);
-      log(`Connection error: ${error}`);
+      log(`WebSocket Connection error: ${error}`);
     });
   }
 
@@ -196,11 +208,17 @@
   }
 
   function subscribe() {
-    if (!stompClient || !stompClient.connected) return;
+    if (!stompClient || !stompClient.connected) {
+      log('Cannot subscribe: WebSocket not connected');
+      return;
+    }
     subscription = stompClient.subscribe('/topic/matches', function (message) {
       try {
+        log(`Received WebSocket message: ${message.body}`);
         const data = JSON.parse(message.body);
+        log(`Parsed match data: ${JSON.stringify(data)}`);
         renderMatch(data);
+        log(`Match rendered successfully`);
       } catch (e) {
         log(`Failed to parse message: ${e}`);
       }

@@ -1,5 +1,6 @@
 package org.games.matchmakingservice.config;
 
+import org.games.matchmakingservice.service.WebSocketConnectionTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -19,12 +20,15 @@ class WebSocketAuthChannelInterceptorTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private WebSocketConnectionTracker connectionTracker;
+
     private WebSocketAuthChannelInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        interceptor = new WebSocketAuthChannelInterceptor(jwtService);
+        interceptor = new WebSocketAuthChannelInterceptor(jwtService, connectionTracker);
     }
 
     @Test

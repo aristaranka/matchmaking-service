@@ -2,6 +2,7 @@ package org.games.matchmakingservice.service;
 
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.games.matchmakingservice.service.WebSocketConnectionTracker;
 import org.games.matchmakingservice.domain.MatchRequest;
 import org.games.matchmakingservice.domain.MatchResult;
 import org.games.matchmakingservice.domain.Player;
@@ -48,6 +49,7 @@ public class MatchmakingService {
     private final MeterRegistry meterRegistry;
     private final MatchRepository matchRepository;
     private final PlayerStatsRepository playerStatsRepository;
+    private final WebSocketConnectionTracker connectionTracker;
 
     private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
 
@@ -206,6 +208,12 @@ public class MatchmakingService {
         try {
             if (!matchmakingEnabled) {
                 log.debug("Matchmaking is paused; skipping this cycle");
+                return;
+            }
+            
+            // Check if there are any active WebSocket connections
+            if (!connectionTracker.hasActiveConnections()) {
+                log.debug("No active WebSocket connections; skipping matchmaking to preserve queue for observation");
                 return;
             }
             // Process matches until no more pairs can be made
@@ -684,8 +692,10 @@ public class MatchmakingService {
      */
     private void broadcastMatchResult(MatchResult matchResult) {
         try {
+            log.info("Broadcasting match result via WebSocket: matchId={}, playerA={}, playerB={}, winner={}", 
+                    matchResult.getMatchId(), matchResult.getPlayerA(), matchResult.getPlayerB(), matchResult.getWinner());
             messagingTemplate.convertAndSend("/topic/matches", matchResult);
-            log.debug("Broadcasted match result: {}", matchResult.getMatchId());
+            log.info("Successfully broadcasted match result: {}", matchResult.getMatchId());
         } catch (Exception e) {
             log.error("Failed to broadcast match result {}", matchResult.getMatchId(), e);
         }

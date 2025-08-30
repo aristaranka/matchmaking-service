@@ -4,6 +4,7 @@ import org.games.matchmakingservice.domain.Player;
 import org.games.matchmakingservice.dto.MatchRequestDto;
 import org.games.matchmakingservice.dto.MatchResultDto;
 import org.games.matchmakingservice.service.MatchmakingService;
+import org.games.matchmakingservice.service.WebSocketConnectionTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,11 +27,14 @@ class MatchmakingControllerTest {
     @Mock
     private MatchmakingService matchmakingService;
 
+    @Mock
+    private WebSocketConnectionTracker connectionTracker;
+
     private MatchmakingController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new MatchmakingController(matchmakingService);
+        controller = new MatchmakingController(matchmakingService, connectionTracker);
     }
 
     @Test
@@ -444,11 +448,16 @@ class MatchmakingControllerTest {
     @Test
     void testEnabledEndpoint() {
         when(matchmakingService.isMatchmakingEnabled()).thenReturn(true);
+        when(connectionTracker.getConnectionCount()).thenReturn(2);
+        when(connectionTracker.hasActiveConnections()).thenReturn(true);
+        
         ResponseEntity<Map<String, Object>> response = controller.getEnabled();
         assertEquals(HttpStatus.OK, response.getStatusCode());
         Map<String, Object> body = response.getBody();
         assertNotNull(body);
         assertTrue((Boolean) body.get("success"));
         assertEquals(true, body.get("enabled"));
+        assertEquals(2, body.get("wsConnections"));
+        assertEquals(true, body.get("wsActive"));
     }
 } 

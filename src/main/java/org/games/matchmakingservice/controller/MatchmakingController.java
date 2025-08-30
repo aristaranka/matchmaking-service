@@ -5,6 +5,7 @@ import org.games.matchmakingservice.domain.Player;
 import org.games.matchmakingservice.dto.MatchRequestDto;
 import org.games.matchmakingservice.dto.MatchResultDto;
 import org.games.matchmakingservice.service.MatchmakingService;
+import org.games.matchmakingservice.service.WebSocketConnectionTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ import java.util.Map;
 public class MatchmakingController {
 
     private final MatchmakingService matchmakingService;
+    private final WebSocketConnectionTracker connectionTracker;
 
 
     private static final Logger log = LoggerFactory.getLogger(MatchmakingController.class);
@@ -299,6 +301,22 @@ public class MatchmakingController {
         return ResponseEntity.ok(Map.of(
             "success", true,
             "enabled", matchmakingService.isMatchmakingEnabled(),
+            "wsConnections", connectionTracker.getConnectionCount(),
+            "wsActive", connectionTracker.hasActiveConnections(),
+            "timestamp", System.currentTimeMillis()
+        ));
+    }
+
+    /**
+     * Get WebSocket connection status.
+     */
+    @GetMapping("/websocket/status")
+    public ResponseEntity<Map<String, Object>> getWebSocketStatus() {
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "activeConnections", connectionTracker.getConnectionCount(),
+            "hasConnections", connectionTracker.hasActiveConnections(),
+            "connections", connectionTracker.getActiveConnections(),
             "timestamp", System.currentTimeMillis()
         ));
     }

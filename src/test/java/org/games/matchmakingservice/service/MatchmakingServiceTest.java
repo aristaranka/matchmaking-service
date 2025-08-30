@@ -60,6 +60,9 @@ class MatchmakingServiceTest {
     @Mock
     private PlayerStatsRepository playerStatsRepository;
 
+    @Mock
+    private WebSocketConnectionTracker connectionTracker;
+
     private MatchmakingService matchmakingService;
 
     @BeforeEach
@@ -74,7 +77,7 @@ class MatchmakingServiceTest {
 
         matchmakingService = new MatchmakingService(
             redisTemplate, eloService, messagingTemplate, meterRegistry,
-            matchRepository, playerStatsRepository
+            matchRepository, playerStatsRepository, connectionTracker
         );
 
         // Inject configuration fields that are normally set via @Value
@@ -419,6 +422,15 @@ class MatchmakingServiceTest {
         matchmakingService.pauseMatchmaking();
         matchmakingService.processMatchmaking();
         // When paused, the loop should return before touching Redis
+        verify(redisTemplate, never()).opsForZSet();
+        verify(redisTemplate, never()).opsForHash();
+    }
+
+    @Test
+    void testProcessMatchmaking_NoWebSocketConnectionsSkips() {
+        when(connectionTracker.hasActiveConnections()).thenReturn(false);
+        matchmakingService.processMatchmaking();
+        // When no WebSocket connections, the loop should return before touching Redis
         verify(redisTemplate, never()).opsForZSet();
         verify(redisTemplate, never()).opsForHash();
     }
