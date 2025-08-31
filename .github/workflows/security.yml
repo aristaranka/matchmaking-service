@@ -117,7 +117,7 @@ jobs:
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: main
+        base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event_name == 'schedule' && 'HEAD~50' || 'HEAD~1') }}
         head: HEAD
         extra_args: --debug --only-verified
 
