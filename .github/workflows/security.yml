@@ -154,6 +154,9 @@ jobs:
     name: Container Security Scan
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
     
     steps:
     - name: Checkout repository
@@ -168,10 +171,21 @@ jobs:
         image-ref: 'matchmaking-service:security-scan'
         format: 'sarif'
         output: 'trivy-results.sarif'
+      continue-on-error: true
+
+    - name: Check if Trivy SARIF exists
+      id: check-trivy-sarif
+      run: |
+        if [ -f "trivy-results.sarif" ]; then
+          echo "sarif-exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "sarif-exists=false" >> $GITHUB_OUTPUT
+          echo "Trivy SARIF file not found, skipping upload"
+        fi
 
     - name: Upload Trivy scan results
+      if: steps.check-trivy-sarif.outputs.sarif-exists == 'true'
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
       with:
         sarif_file: 'trivy-results.sarif'
 
@@ -182,12 +196,25 @@ jobs:
         image: 'matchmaking-service:security-scan'
         severity-cutoff: medium
         fail-build: false
+        output-format: sarif
+      continue-on-error: true
+
+    - name: Check if Anchore SARIF exists
+      id: check-anchore-sarif
+      run: |
+        if [ -n "${{ steps.grype-scan.outputs.sarif }}" ] && [ -f "${{ steps.grype-scan.outputs.sarif }}" ]; then
+          echo "sarif-exists=true" >> $GITHUB_OUTPUT
+          echo "sarif-path=${{ steps.grype-scan.outputs.sarif }}" >> $GITHUB_OUTPUT
+        else
+          echo "sarif-exists=false" >> $GITHUB_OUTPUT
+          echo "Anchore SARIF file not found, skipping upload"
+        fi
 
     - name: Upload Anchore scan SARIF report
-      if: always()
+      if: steps.check-anchore-sarif.outputs.sarif-exists == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
-        sarif_file: ${{ steps.grype-scan.outputs.sarif }}
+        sarif_file: ${{ steps.check-anchore-sarif.outputs.sarif-path }}
 
   security-report:
     name: Security Report
