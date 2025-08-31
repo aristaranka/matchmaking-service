@@ -104,7 +104,7 @@ jobs:
 
     - name: Test Docker Compose
       run: |
-        docker-compose up -d --wait
+        docker compose up -d --wait
         sleep 30
         
         # Test health endpoints
@@ -112,10 +112,10 @@ jobs:
         curl -f http://localhost:8080/api/match/health || exit 1
         
         # Test basic functionality
-        docker-compose logs app
+        docker compose logs app
         
-        docker-compose down
+        docker compose down
 
     - name: Cleanup
       if: always()
-      run: docker-compose down -v --remove-orphans
+      run: docker compose down -v --remove-orphans
