@@ -2,7 +2,6 @@ package org.games.matchmakingservice.service;
 
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import org.games.matchmakingservice.service.WebSocketConnectionTracker;
 import org.games.matchmakingservice.domain.MatchRequest;
 import org.games.matchmakingservice.domain.MatchResult;
 import org.games.matchmakingservice.domain.Player;
@@ -451,10 +450,32 @@ public class MatchmakingService {
     }
 
     private int computeDynamicTolerance(MatchRequest request) {
+        // Only allow tolerance to grow when there are 2+ players in queue
+        // This prevents weaker players from being matched against much stronger opponents too quickly
+        long queueSize = getCurrentQueueSize();
+        if (queueSize < 2) {
+            return eloTolerance; // Reset to base tolerance when queue has < 2 players
+        }
+        
         long waitSeconds = getWaitSeconds(request);
         long widened = Math.round(toleranceGrowthPerSecond * waitSeconds);
         long candidate = (long) eloTolerance + widened;
         return (int) Math.min(candidate, maxEloTolerance);
+    }
+
+    /**
+     * Get the current number of players in the matchmaking queue.
+     * 
+     * @return Number of players currently in queue
+     */
+    private long getCurrentQueueSize() {
+        try {
+            Long size = redisTemplate.opsForZSet().zCard(MATCHMAKING_QUEUE);
+            return size != null ? size.longValue() : 0L;
+        } catch (Exception e) {
+            log.warn("Failed to get queue size", e);
+            return 0L;
+        }
     }
 
     /**

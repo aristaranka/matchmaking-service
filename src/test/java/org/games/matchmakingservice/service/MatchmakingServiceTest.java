@@ -82,7 +82,7 @@ class MatchmakingServiceTest {
 
         // Inject configuration fields that are normally set via @Value
         setPrivateField(matchmakingService, "eloTolerance", 200);
-        setPrivateField(matchmakingService, "toleranceGrowthPerSecond", 5.0d);
+        setPrivateField(matchmakingService, "toleranceGrowthPerSecond", 10.0d);
         setPrivateField(matchmakingService, "maxEloTolerance", 800);
         setPrivateField(matchmakingService, "maxWaitTimeSeconds", 15);
     }
@@ -114,6 +114,9 @@ class MatchmakingServiceTest {
 
     @Test
     void testFindBestMatch_UsesDynamicToleranceAndWait() throws Exception {
+        // Mock queue size to simulate having 2+ players (needed for tolerance to grow)
+        when(zSetOperations.zCard("matchmaking:queue")).thenReturn(2L);
+        
         // Prepare two players 400 Elo apart, but with long wait to widen tolerance
         Instant now = Instant.now();
         MatchRequest a = MatchRequest.builder().playerId("A").elo(1000).timestamp(now.minusSeconds(60)).build();
@@ -133,6 +136,41 @@ class MatchmakingServiceTest {
         Object matchPair = fbm.invoke(matchmakingService, java.util.Arrays.asList(pwrA, pwrB));
 
         assertNotNull(matchPair, "Players with sufficient wait should be matched by widened tolerance");
+    }
+
+    @Test
+    void testToleranceOnlyGrowsWithMultiplePlayers() throws Exception {
+        // Test that tolerance only grows when there are 2+ players in queue
+        Instant now = Instant.now();
+        MatchRequest playerWithLongWait = MatchRequest.builder()
+            .playerId("A")
+            .elo(1000)
+            .timestamp(now.minusSeconds(120)) // 2 minutes wait
+            .build();
+
+        // Mock queue size for different scenarios
+        when(zSetOperations.zCard("matchmaking:queue")).thenReturn(1L); // Only 1 player in queue
+
+        // Invoke computeDynamicTolerance via reflection
+        java.lang.reflect.Method cdt = MatchmakingService.class.getDeclaredMethod("computeDynamicTolerance", MatchRequest.class);
+        cdt.setAccessible(true);
+        int toleranceWithOnePlayer = (int) cdt.invoke(matchmakingService, playerWithLongWait);
+
+        // With only 1 player, tolerance should remain at base level (200) regardless of wait time
+        assertEquals(200, toleranceWithOnePlayer, "Tolerance should not grow with only 1 player in queue");
+
+        // Now test with 2+ players in queue
+        when(zSetOperations.zCard("matchmaking:queue")).thenReturn(2L); // 2 players in queue
+        int toleranceWithTwoPlayers = (int) cdt.invoke(matchmakingService, playerWithLongWait);
+
+        // With 2+ players, tolerance should grow based on wait time
+        // 120 seconds * 10 growth per second = 1200 + 200 base = 1400, but capped at maxEloTolerance (800)
+        assertEquals(800, toleranceWithTwoPlayers, "Tolerance should grow with 2+ players in queue");
+
+        // Test with empty queue (0 players)
+        when(zSetOperations.zCard("matchmaking:queue")).thenReturn(0L);
+        int toleranceWithEmptyQueue = (int) cdt.invoke(matchmakingService, playerWithLongWait);
+        assertEquals(200, toleranceWithEmptyQueue, "Tolerance should reset to base with empty queue");
     }
 
     @Test

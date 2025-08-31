@@ -58,10 +58,27 @@
 
   function showAuthenticatedUser(username) {
     const userInfo = $('user-info');
-    userInfo.innerHTML = `
-      <strong>Welcome, ${username}!</strong><br>
-      <button class="logout-btn" onclick="logout()">Logout</button>
-    `;
+    
+    // Clear existing content safely
+    userInfo.textContent = '';
+    
+    // Create welcome message element
+    const welcomeText = document.createElement('strong');
+    welcomeText.textContent = `Welcome, ${username}!`;
+    
+    // Create line break
+    const lineBreak = document.createElement('br');
+    
+    // Create logout button
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'logout-btn';
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.addEventListener('click', logout);
+    
+    // Append elements safely
+    userInfo.appendChild(welcomeText);
+    userInfo.appendChild(lineBreak);
+    userInfo.appendChild(logoutBtn);
   }
 
   function clearAuth() {
@@ -70,7 +87,16 @@
     authToken = null;
     currentUsername = null;
     const userInfo = $('user-info');
-    userInfo.innerHTML = '<a href="/login" class="login-link">Login</a>';
+    // Clear existing content safely
+    userInfo.textContent = '';
+    
+    // Create login link element
+    const loginLink = document.createElement('a');
+    loginLink.href = '/login';
+    loginLink.className = 'login-link';
+    loginLink.textContent = 'Login';
+    
+    userInfo.appendChild(loginLink);
     
     // Show authentication notice and hide main content
     showAuthNotice();
@@ -244,17 +270,27 @@
       const players = Array.isArray(json.queuePlayers) ? json.queuePlayers : [];
       $("queueCount").textContent = json.queueSize ?? players.length;
       const body = $("queueBody");
-      body.innerHTML = '';
+      // Clear existing content safely
+      body.textContent = '';
       players.forEach((p, idx) => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${idx + 1}</td>
-          <td>${p.playerId ?? ''}</td>
-          <td>${p.username ?? ''}</td>
-          <td>${p.elo ?? ''}</td>
-          <td>${p.online ? 'Yes' : 'No'}</td>
-          <td>${formatDate(p.lastActive)}</td>
-        `;
+        
+        // Create table cells safely
+        const cells = [
+          String(idx + 1),
+          String(p.playerId ?? ''),
+          String(p.username ?? ''),
+          String(p.elo ?? ''),
+          p.online ? 'Yes' : 'No',
+          formatDate(p.lastActive)
+        ];
+        
+        cells.forEach(cellText => {
+          const td = document.createElement('td');
+          td.textContent = cellText;
+          tr.appendChild(td);
+        });
+        
         body.appendChild(tr);
       });
       log(`Queue refreshed: ${players.length} players`);
@@ -276,17 +312,26 @@
   function renderMatch(m) {
     const tr = document.createElement('tr');
     const time = m.playedAt ? new Date(m.playedAt).toLocaleTimeString() : new Date().toLocaleTimeString();
-    tr.innerHTML = `
-      <td>${time}</td>
-      <td>${m.matchId ?? ''}</td>
-      <td>${m.playerA ?? ''} (${m.oldEloA ?? ''})</td>
-      <td>${m.playerB ?? ''} (${m.oldEloB ?? ''})</td>
-      <td>${m.winner ?? ''}</td>
-      <td>${m.oldEloA ?? ''}</td>
-      <td>${m.oldEloB ?? ''}</td>
-      <td>${m.newEloA ?? ''}</td>
-      <td>${m.newEloB ?? ''}</td>
-    `;
+    
+    // Create table cells safely
+    const cells = [
+      time,
+      String(m.matchId ?? ''),
+      `${String(m.playerA ?? '')} (${String(m.oldEloA ?? '')})`,
+      `${String(m.playerB ?? '')} (${String(m.oldEloB ?? '')})`,
+      String(m.winner ?? ''),
+      String(m.oldEloA ?? ''),
+      String(m.oldEloB ?? ''),
+      String(m.newEloA ?? ''),
+      String(m.newEloB ?? '')
+    ];
+    
+    cells.forEach(cellText => {
+      const td = document.createElement('td');
+      td.textContent = cellText;
+      tr.appendChild(td);
+    });
+    
     const body = $("matchesBody");
     body.insertBefore(tr, body.firstChild);
   }

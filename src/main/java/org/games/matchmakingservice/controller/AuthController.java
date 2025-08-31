@@ -40,7 +40,7 @@ public class AuthController {
     }
 
     @PostMapping(value = "/register", produces = {"application/json", "*/*"})
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         try {
             log.info("Register endpoint called for username: {}", request.getUsername());
             
@@ -65,7 +65,7 @@ public class AuthController {
     }
 
     @PostMapping(value = "/login", produces = {"application/json", "*/*"})
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         try {
             log.info("Login endpoint called for username: {}", request.getUsername());
             
