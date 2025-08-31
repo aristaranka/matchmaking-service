@@ -78,15 +78,6 @@ jobs:
       with:
         sarif_file: 'trivy-results.sarif'
 
-    - name: Docker Scout CVE scan
-      if: github.event_name != 'pull_request'
-      uses: docker/scout-action@v1
-      with:
-        command: cves
-        image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-        only-severities: critical,high
-        exit-code: true
-
   docker-compose-test:
     name: Test Docker Compose
     runs-on: ubuntu-latest

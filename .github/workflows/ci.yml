@@ -14,6 +14,10 @@ jobs:
   test:
     name: Test & Quality Checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     
     services:
       redis:
