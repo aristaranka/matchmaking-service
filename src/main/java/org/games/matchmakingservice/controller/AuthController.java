@@ -1,5 +1,12 @@
 package org.games.matchmakingservice.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.games.matchmakingservice.config.JwtService;
 import org.games.matchmakingservice.domain.User;
@@ -7,15 +14,17 @@ import org.games.matchmakingservice.dto.AuthResponse;
 import org.games.matchmakingservice.dto.LoginRequest;
 import org.games.matchmakingservice.dto.RegisterRequest;
 import org.games.matchmakingservice.service.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.bind.annotation.RequestMethod;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 
 import java.time.LocalDateTime;
@@ -25,6 +34,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS})
+@Tag(name = "Authentication", description = "User registration, login, and JWT token management")
 public class AuthController {
 
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
@@ -39,6 +49,61 @@ public class AuthController {
         this.authenticationManager = authenticationManager;
     }
 
+    @Operation(
+        summary = "Register a new user",
+        description = "Create a new user account with username, email, and password. Returns JWT token upon successful registration."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "User registered successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = AuthResponse.class),
+                examples = @ExampleObject(
+                    name = "Successful Registration",
+                    value = """
+                    {
+                        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "username": "player1",
+                        "role": "USER",
+                        "expiresAt": "2024-01-02T12:00:00"
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Invalid input or user already exists",
+            content = @Content(
+                mediaType = "application/json",
+                examples = @ExampleObject(
+                    name = "Registration Error",
+                    value = """
+                    {
+                        "message": "Username already exists"
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = "Internal server error",
+            content = @Content(
+                mediaType = "application/json",
+                examples = @ExampleObject(
+                    name = "Server Error",
+                    value = """
+                    {
+                        "message": "Registration failed due to server error"
+                    }
+                    """
+                )
+            )
+        )
+    })
     @PostMapping(value = "/register", produces = {"application/json", "*/*"})
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         try {
@@ -64,6 +129,50 @@ public class AuthController {
         }
     }
 
+    @Operation(
+        summary = "User login",
+        description = "Authenticate user with username and password. Returns JWT token upon successful login."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Login successful",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = AuthResponse.class),
+                examples = @ExampleObject(
+                    name = "Successful Login",
+                    value = """
+                    {
+                        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "username": "player1",
+                        "role": "USER",
+                        "expiresAt": "2024-01-02T12:00:00"
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "401",
+            description = "Invalid credentials",
+            content = @Content(
+                mediaType = "application/json",
+                examples = @ExampleObject(
+                    name = "Invalid Credentials",
+                    value = """
+                    {
+                        "message": "Invalid username or password"
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "500",
+            description = "Internal server error"
+        )
+    })
     @PostMapping(value = "/login", produces = {"application/json", "*/*"})
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         try {

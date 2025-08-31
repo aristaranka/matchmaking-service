@@ -1,5 +1,14 @@
 package org.games.matchmakingservice.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.games.matchmakingservice.domain.Player;
 import org.games.matchmakingservice.dto.MatchRequestDto;
@@ -23,6 +32,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/match")
 @RequiredArgsConstructor
+@Tag(name = "Matchmaking", description = "Core matchmaking operations - join/leave queue, match results")
+@SecurityRequirement(name = "bearerAuth")
 public class MatchmakingController {
 
     private final MatchmakingService matchmakingService;
@@ -30,12 +41,49 @@ public class MatchmakingController {
 
 
     private static final Logger log = LoggerFactory.getLogger(MatchmakingController.class);
-    /**
-     * Join the matchmaking queue.
-     * 
-     * @param request The match request containing player ID and Elo
-     * @return Response indicating success or failure
-     */
+    @Operation(
+        summary = "Join matchmaking queue",
+        description = "Add a player to the matchmaking queue with their current Elo rating. The system will automatically find suitable opponents based on Elo proximity."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "Successfully joined queue",
+            content = @Content(
+                mediaType = "application/json",
+                examples = @ExampleObject(
+                    name = "Join Success",
+                    value = """
+                    {
+                        "success": true,
+                        "message": "Successfully joined matchmaking queue",
+                        "playerId": "player1",
+                        "elo": 1200
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Invalid request or player already in queue",
+            content = @Content(
+                mediaType = "application/json",
+                examples = @ExampleObject(
+                    name = "Join Error",
+                    value = """
+                    {
+                        "success": false,
+                        "message": "Failed to join matchmaking queue",
+                        "playerId": "player1"
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(responseCode = "401", description = "Unauthorized - Invalid or missing JWT token"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @PostMapping("/join")
     public ResponseEntity<Map<String, Object>> joinMatchmaking(@Valid @RequestBody MatchRequestDto request) {
         try {
