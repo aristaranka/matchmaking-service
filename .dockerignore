@@ -1,0 +1,60 @@
+# Ignore build artifacts
+target/
+!target/*.jar
+
+# Ignore IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore version control
+.git/
+.gitignore
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Ignore Maven wrapper jar (we copy it explicitly)
+!.mvn/wrapper/maven-wrapper.jar
+
+# Ignore test reports
+surefire-reports/
+
+# Ignore Docker files (avoid recursive copying)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Ignore documentation
+README.md
+*.md
+
+# Ignore configuration that shouldn't be in container
+.env
+.env.local
+.env.production
+
+# Ignore node_modules if any frontend tooling
+node_modules/
+
+# Ignore coverage reports
+coverage/
+*.coverage
+
+# Ignore backup files
+*.bak
+*.backup
