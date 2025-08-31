@@ -1,0 +1,236 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build application
+      run: ./mvnw clean package -DskipTests -B
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Generate changelog from git commits since last tag
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        if [ -z "$PREVIOUS_TAG" ]; then
+          CHANGELOG=$(git log --pretty=format:"- %s (%h)" --reverse)
+        else
+          CHANGELOG=$(git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%h)" --reverse)
+        fi
+        
+        # Save changelog to file and output
+        echo "$CHANGELOG" > CHANGELOG.md
+        echo "changelog<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGELOG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        release_name: Release ${{ steps.version.outputs.version }}
+        body: |
+          ## What's Changed
+          
+          ${{ steps.changelog.outputs.changelog }}
+          
+          ## Docker Images
+          
+          ```bash
+          docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}
+          ```
+          
+          ## Installation
+          
+          ### Docker Compose
+          ```bash
+          curl -O https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.yml
+          docker-compose up -d
+          ```
+          
+          ### Manual Installation
+          1. Download the JAR file from the assets below
+          2. Ensure Java 21+ and Redis are installed
+          3. Run: `java -jar matchmaking-service-*.jar`
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/HEAD~10...${{ steps.version.outputs.version }}
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+
+    - name: Upload JAR to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: target/matchmaking-service-*.jar
+        asset_name: matchmaking-service-${{ steps.version.outputs.version }}.jar
+        asset_content_type: application/java-archive
+
+    - name: Upload docker-compose to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: docker-compose.yml
+        asset_name: docker-compose.yml
+        asset_content_type: text/yaml
+
+  docker-release:
+    name: Build & Push Release Docker Image
+    runs-on: ubuntu-latest
+    needs: create-release
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}
+        tags: |
+          type=semver,pattern={{version}},value=${{ steps.version.outputs.version }}
+          type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.version }}
+          type=semver,pattern={{major}},value=${{ steps.version.outputs.version }}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ steps.version.outputs.version }}
+
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [create-release, docker-release]
+    if: always()
+
+    steps:
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Notify Slack
+      if: success() && env.SLACK_WEBHOOK_URL != ''
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#releases'
+        text: |
+          🎉 New release published!
+          
+          **Version**: ${{ steps.version.outputs.version }}
+          **Repository**: ${{ github.repository }}
+          **Release Notes**: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}
+          **Docker Image**: `ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}`
+          
+          Ready for deployment! 🚀
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+    - name: Create deployment issue
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `Deploy ${{ steps.version.outputs.version }} to Production`,
+            body: `## Deployment Checklist
+            
+            - [ ] Staging deployment successful
+            - [ ] Smoke tests passed
+            - [ ] Database migrations applied (if any)
+            - [ ] Monitoring alerts configured
+            - [ ] Rollback plan confirmed
+            
+            **Release**: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}
+            **Docker Image**: \`ghcr.io/${{ github.repository }}:${{ steps.version.outputs.version }}\`
+            
+            /cc @devops-team`,
+            labels: ['deployment', 'production']
+          })

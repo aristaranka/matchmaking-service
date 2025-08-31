@@ -1,0 +1,280 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      version:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set deployment version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=main" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Deploy to staging server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: ${{ secrets.STAGING_PORT || '22' }}
+        script: |
+          # Navigate to deployment directory
+          cd /opt/matchmaking-service || { echo "Deployment directory not found"; exit 1; }
+          
+          # Pull latest configuration
+          git pull origin main
+          
+          # Update docker-compose for staging
+          export IMAGE_TAG="${{ steps.version.outputs.version }}"
+          export REGISTRY="${{ env.REGISTRY }}"
+          export IMAGE_NAME="${{ env.IMAGE_NAME }}"
+          
+          # Replace image in docker-compose
+          sed -i "s|build:|#build:|g" docker-compose.yml
+          sed -i "s|context: .|#context: .|g" docker-compose.yml  
+          sed -i "s|dockerfile: Dockerfile|#dockerfile: Dockerfile|g" docker-compose.yml
+          sed -i "/container_name: matchmaking-app/a\\    image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" docker-compose.yml
+          
+          # Set staging environment variables
+          cat > .env << EOF
+          SPRING_PROFILES_ACTIVE=staging
+          SPRING_DATA_REDIS_HOST=redis
+          SPRING_DATASOURCE_URL=jdbc:postgresql://staging-db:5432/matchmaking
+          SPRING_DATASOURCE_USERNAME=${{ secrets.STAGING_DB_USER }}
+          SPRING_DATASOURCE_PASSWORD=${{ secrets.STAGING_DB_PASSWORD }}
+          SECURITY_JWT_SECRET=${{ secrets.STAGING_JWT_SECRET }}
+          EOF
+          
+          # Deploy with zero-downtime
+          docker-compose pull app
+          docker-compose up -d --no-deps app
+          
+          # Wait for health check
+          timeout 120s bash -c 'until curl -f http://localhost:8080/actuator/health; do sleep 5; done'
+          
+          # Cleanup old images
+          docker image prune -f
+
+    - name: Run staging smoke tests
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        port: ${{ secrets.STAGING_PORT || '22' }}
+        script: |
+          # Basic health checks
+          curl -f http://localhost:8080/actuator/health
+          curl -f http://localhost:8080/api/match/health
+          
+          # Test authentication
+          response=$(curl -s -X POST http://localhost:8080/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"testuser","password":"testpass"}')
+          
+          if [[ $response == *"token"* ]]; then
+            echo "✅ Authentication test passed"
+          else
+            echo "❌ Authentication test failed"
+            exit 1
+          fi
+
+    - name: Notify deployment success
+      if: success() && env.SLACK_WEBHOOK_URL != ''
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#deployments'
+        text: |
+          ✅ Staging deployment successful!
+          Version: ${{ steps.version.outputs.version }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    needs: deploy-staging
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set deployment version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "version=latest" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create deployment
+      uses: chrnorm/deployment-action@v2
+      id: deployment
+      with:
+        token: ${{ github.token }}
+        environment: production
+        description: 'Deploy version ${{ steps.version.outputs.version }} to production'
+
+    - name: Deploy to production server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: ${{ secrets.PRODUCTION_PORT || '22' }}
+        script: |
+          # Navigate to deployment directory
+          cd /opt/matchmaking-service || { echo "Deployment directory not found"; exit 1; }
+          
+          # Create backup of current deployment
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          docker-compose ps > "backup_${timestamp}.txt"
+          
+          # Pull latest configuration
+          git pull origin main
+          
+          # Update docker-compose for production
+          export IMAGE_TAG="${{ steps.version.outputs.version }}"
+          export REGISTRY="${{ env.REGISTRY }}"
+          export IMAGE_NAME="${{ env.IMAGE_NAME }}"
+          
+          # Replace image in docker-compose
+          sed -i "s|build:|#build:|g" docker-compose.yml
+          sed -i "s|context: .|#context: .|g" docker-compose.yml
+          sed -i "s|dockerfile: Dockerfile|#dockerfile: Dockerfile|g" docker-compose.yml
+          sed -i "/container_name: matchmaking-app/a\\    image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" docker-compose.yml
+          
+          # Set production environment variables
+          cat > .env << EOF
+          SPRING_PROFILES_ACTIVE=production
+          SPRING_DATA_REDIS_HOST=redis
+          SPRING_DATASOURCE_URL=jdbc:postgresql://prod-db:5432/matchmaking
+          SPRING_DATASOURCE_USERNAME=${{ secrets.PRODUCTION_DB_USER }}
+          SPRING_DATASOURCE_PASSWORD=${{ secrets.PRODUCTION_DB_PASSWORD }}
+          SECURITY_JWT_SECRET=${{ secrets.PRODUCTION_JWT_SECRET }}
+          JAVA_OPTS=-Xmx1g -Xms512m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0
+          EOF
+          
+          # Blue-Green deployment strategy
+          docker-compose pull app
+          docker-compose up -d --no-deps --scale app=2 app
+          
+          # Wait for new instance to be healthy
+          sleep 30
+          timeout 120s bash -c 'until curl -f http://localhost:8080/actuator/health; do sleep 5; done'
+          
+          # Scale down to single instance (removes old one)
+          docker-compose up -d --no-deps --scale app=1 app
+          
+          # Cleanup old images
+          docker image prune -f
+
+    - name: Run production smoke tests
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: ${{ secrets.PRODUCTION_PORT || '22' }}
+        script: |
+          # Comprehensive health checks
+          curl -f http://localhost:8080/actuator/health
+          curl -f http://localhost:8080/api/match/health
+          curl -f http://localhost:8080/actuator/prometheus
+          
+          # Test core functionality
+          response=$(curl -s http://localhost:8080/api/monitoring/metrics)
+          if [[ $response == *"queueSize"* ]]; then
+            echo "✅ Monitoring endpoint test passed"
+          else
+            echo "❌ Monitoring endpoint test failed"
+            exit 1
+          fi
+
+    - name: Update deployment status (success)
+      if: success()
+      uses: chrnorm/deployment-status@v2
+      with:
+        token: ${{ github.token }}
+        deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+        state: success
+        environment-url: https://matchmaking.yourdomain.com
+
+    - name: Update deployment status (failure)
+      if: failure()
+      uses: chrnorm/deployment-status@v2
+      with:
+        token: ${{ github.token }}
+        deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+        state: failure
+
+    - name: Notify deployment success
+      if: success() && env.SLACK_WEBHOOK_URL != ''
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#deployments'
+        text: |
+          🚀 Production deployment successful!
+          Version: ${{ steps.version.outputs.version }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+          URL: https://matchmaking.yourdomain.com
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+    - name: Notify deployment failure
+      if: failure() && env.SLACK_WEBHOOK_URL != ''
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#deployments'
+        text: |
+          ❌ Production deployment failed!
+          Version: ${{ steps.version.outputs.version }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+          Check logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
