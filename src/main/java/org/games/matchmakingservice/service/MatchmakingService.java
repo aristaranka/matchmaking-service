@@ -17,6 +17,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.Counter;
 import org.games.matchmakingservice.domain.MatchEntity;
 import org.games.matchmakingservice.domain.PlayerStats;
 import org.games.matchmakingservice.repository.MatchRepository;
@@ -39,7 +41,6 @@ import java.util.concurrent.TimeUnit;
  * Uses Redis sorted sets for efficient player matching and scheduled tasks for match processing.
  */
 @Service
-@RequiredArgsConstructor
 public class MatchmakingService {
 
     private final RedisTemplate<String, Object> redisTemplate;
@@ -50,10 +51,126 @@ public class MatchmakingService {
     private final PlayerStatsRepository playerStatsRepository;
     private final WebSocketConnectionTracker connectionTracker;
 
+    // Monitoring metrics
+    private final Timer matchmakingProcessingTimer;
+    private final Timer matchCreationTimer;
+    private final Counter enqueueSuccessCounter;
+    private final Counter enqueueFailureCounter;
+    private final Counter dequeueSuccessCounter;
+    private final Counter dequeueFailureCounter;
+    private final Timer playerWaitTimeTimer;
+
+    public MatchmakingService(RedisTemplate<String, Object> redisTemplate,
+                            EloService eloService,
+                            SimpMessagingTemplate messagingTemplate,
+                            MeterRegistry meterRegistry,
+                            MatchRepository matchRepository,
+                            PlayerStatsRepository playerStatsRepository,
+                            WebSocketConnectionTracker connectionTracker) {
+        this.redisTemplate = redisTemplate;
+        this.eloService = eloService;
+        this.messagingTemplate = messagingTemplate;
+        this.meterRegistry = meterRegistry;
+        this.matchRepository = matchRepository;
+        this.playerStatsRepository = playerStatsRepository;
+        this.connectionTracker = connectionTracker;
+
+        // Initialize monitoring metrics with safe registration
+        this.matchmakingProcessingTimer = createTimer(meterRegistry, "matchmaking.processing.time", "Time taken to process matchmaking queue");
+        this.matchCreationTimer = createTimer(meterRegistry, "matchmaking.match.creation.time", "Time taken to create a match");
+        this.enqueueSuccessCounter = createCounter(meterRegistry, "matchmaking.enqueue.success", "Number of successful player enqueues");
+        this.enqueueFailureCounter = createCounter(meterRegistry, "matchmaking.enqueue.failure", "Number of failed player enqueues");
+        this.dequeueSuccessCounter = createCounter(meterRegistry, "matchmaking.dequeue.success", "Number of successful player dequeues");
+        this.dequeueFailureCounter = createCounter(meterRegistry, "matchmaking.dequeue.failure", "Number of failed player dequeues");
+        this.playerWaitTimeTimer = createTimer(meterRegistry, "matchmaking.player.wait.time", "Time players spend waiting in queue before being matched");
+    }
+
     private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
 
     // Runtime control flag to pause/resume matchmaking loop
     private volatile boolean matchmakingEnabled = true;
+
+    /**
+     * Safely create a Timer metric, handling test scenarios where MeterRegistry might be mocked.
+     */
+    private static Timer createTimer(MeterRegistry meterRegistry, String name, String description) {
+        try {
+            return Timer.builder(name)
+                    .description(description)
+                    .register(meterRegistry);
+        } catch (Exception e) {
+            log.warn("Failed to register timer metric '{}': {}", name, e.getMessage());
+            // Return null for test scenarios - will be handled by safe methods
+            return null;
+        }
+    }
+
+    /**
+     * Safely create a Counter metric, handling test scenarios where MeterRegistry might be mocked.
+     */
+    private static Counter createCounter(MeterRegistry meterRegistry, String name, String description) {
+        try {
+            return Counter.builder(name)
+                    .description(description)
+                    .register(meterRegistry);
+        } catch (Exception e) {
+            log.warn("Failed to register counter metric '{}': {}", name, e.getMessage());
+            // Return null for test scenarios - will be handled by safe methods
+            return null;
+        }
+    }
+
+    /**
+     * Safely increment a counter, handling null counters in test scenarios.
+     */
+    private static void safeIncrement(Counter counter) {
+        try {
+            if (counter != null) {
+                counter.increment();
+            }
+        } catch (Exception e) {
+            log.debug("Failed to increment counter: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Safely start a timer, handling test scenarios where MeterRegistry might be mocked.
+     */
+    private Timer.Sample safeStartTimer() {
+        try {
+            return Timer.start(meterRegistry);
+        } catch (Exception e) {
+            log.debug("Failed to start timer: {}", e.getMessage());
+            // Return null for test scenarios - will be handled by safeStopTimer
+            return null;
+        }
+    }
+
+    /**
+     * Safely stop a timer, handling null timers in test scenarios.
+     */
+    private static void safeStopTimer(Timer.Sample sample, Timer timer) {
+        try {
+            if (sample != null && timer != null) {
+                sample.stop(timer);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to stop timer: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Safely record a timer value, handling null timers in test scenarios.
+     */
+    private static void safeRecord(Timer timer, long duration, TimeUnit unit) {
+        try {
+            if (timer != null) {
+                timer.record(duration, unit);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to record timer value: {}", e.getMessage());
+        }
+    }
 
     // Redis keys
     private static final String MATCHMAKING_QUEUE = "matchmaking:queue";
@@ -121,10 +238,17 @@ public class MatchmakingService {
             log.info("Player {} enqueued with Elo {} and score {}",
                     playerId, matchRequest.getElo(), score);
             
+            // Record successful enqueue
+            safeIncrement(enqueueSuccessCounter);
+            
             return true;
         } catch (Exception e) {
             log.error("Failed to enqueue player {}: {} - Exception type: {}", 
                 matchRequest.getPlayerId(), e.getMessage(), e.getClass().getSimpleName(), e);
+            
+            // Record failed enqueue
+            safeIncrement(enqueueFailureCounter);
+            
             return false;
         }
     }
@@ -189,11 +313,18 @@ public class MatchmakingService {
                 meterRegistry.gauge("matchmaking.queue.size", 
                     redisTemplate.opsForZSet().size(MATCHMAKING_QUEUE));
                 
+                // Record successful dequeue
+                safeIncrement(dequeueSuccessCounter);
+                
                 return true;
             }
             return false;
         } catch (Exception e) {
             log.error("Failed to dequeue player {}", playerId, e);
+            
+            // Record failed dequeue
+            safeIncrement(dequeueFailureCounter);
+            
             return false;
         }
     }
@@ -204,6 +335,7 @@ public class MatchmakingService {
      */
     @Scheduled(fixedRateString = "${app.match.poll-rate-ms:1000}")
     public void processMatchmaking() {
+        Timer.Sample sample = safeStartTimer();
         try {
             if (!matchmakingEnabled) {
                 log.debug("Matchmaking is paused; skipping this cycle");
@@ -290,6 +422,9 @@ public class MatchmakingService {
             
         } catch (Exception e) {
             log.error("Match loop failed", e);
+        } finally {
+            // Record processing time
+            safeStopTimer(sample, matchmakingProcessingTimer);
         }
     }
 
@@ -487,9 +622,16 @@ public class MatchmakingService {
      * @param requestB Player B's match request data
      */
     private void createMatchWithData(String playerA, String playerB, MatchRequest requestA, MatchRequest requestB) {
+        Timer.Sample matchCreationSample = safeStartTimer();
         try {
             log.debug("Creating match between {} and {} with pre-captured data", playerA, playerB);
             String matchId = UUID.randomUUID().toString();
+            
+            // Record player wait times
+            long waitTimeA = getWaitSeconds(requestA);
+            long waitTimeB = getWaitSeconds(requestB);
+            safeRecord(playerWaitTimeTimer, waitTimeA, TimeUnit.SECONDS);
+            safeRecord(playerWaitTimeTimer, waitTimeB, TimeUnit.SECONDS);
             
             int oldEloA = requestA.getElo();
             int oldEloB = requestB.getElo();
@@ -535,6 +677,9 @@ public class MatchmakingService {
                     
         } catch (Exception e) {
             log.error("Failed to create match between {} and {}", playerA, playerB, e);
+        } finally {
+            // Record match creation time
+            safeStopTimer(matchCreationSample, matchCreationTimer);
         }
     }
 

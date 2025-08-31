@@ -1,5 +1,7 @@
 package org.games.matchmakingservice.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,20 @@ public class WebSocketConnectionTracker {
     
     private final ConcurrentHashMap<String, String> activeConnections = new ConcurrentHashMap<>();
     private final AtomicInteger connectionCount = new AtomicInteger(0);
+    
+    private final Counter websocketConnectionCounter;
+    private final Counter websocketDisconnectionCounter;
+    private final MeterRegistry meterRegistry;
+
+    public WebSocketConnectionTracker(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+        this.websocketConnectionCounter = Counter.builder("websocket.connections")
+                .description("Number of WebSocket connections established")
+                .register(meterRegistry);
+        this.websocketDisconnectionCounter = Counter.builder("websocket.disconnections")
+                .description("Number of WebSocket disconnections")
+                .register(meterRegistry);
+    }
 
     /**
      * Register a new WebSocket connection.
@@ -28,6 +44,11 @@ public class WebSocketConnectionTracker {
     public void addConnection(String sessionId, String username) {
         activeConnections.put(sessionId, username);
         int count = connectionCount.incrementAndGet();
+        
+        // Update metrics
+        websocketConnectionCounter.increment();
+        meterRegistry.gauge("websocket.active.connections", count);
+        
         log.info("WebSocket connection added: sessionId={}, username={}, total connections={}", 
                 sessionId, username, count);
     }
@@ -40,6 +61,11 @@ public class WebSocketConnectionTracker {
     public void removeConnection(String sessionId) {
         String username = activeConnections.remove(sessionId);
         int count = connectionCount.decrementAndGet();
+        
+        // Update metrics
+        websocketDisconnectionCounter.increment();
+        meterRegistry.gauge("websocket.active.connections", count);
+        
         log.info("WebSocket connection removed: sessionId={}, username={}, total connections={}", 
                 sessionId, username, count);
     }
