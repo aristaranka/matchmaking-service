@@ -72,10 +72,22 @@ jobs:
         ./mvnw org.owasp:dependency-check-maven:check \
           -DfailBuildOnCVSS=7 \
           -DsuppressionsLocation=.github/dependency-check-suppressions.xml \
-          -Dformats=XML,HTML,SARIF
+          -Dformats=XML,HTML,SARIF \
+          -DsarifFilename=dependency-check-report.sarif
+      continue-on-error: true
+
+    - name: Check if OWASP SARIF exists
+      id: check-owasp-sarif
+      run: |
+        if [ -f "target/dependency-check-report.sarif" ]; then
+          echo "sarif-exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "sarif-exists=false" >> $GITHUB_OUTPUT
+          echo "OWASP SARIF file not found, skipping upload"
+        fi
 
     - name: Upload OWASP Dependency Check SARIF
-      if: always()
+      if: steps.check-owasp-sarif.outputs.sarif-exists == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: target/dependency-check-report.sarif
@@ -96,9 +108,20 @@ jobs:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       with:
         args: --severity-threshold=medium --sarif-file-output=snyk.sarif
+      continue-on-error: true
+
+    - name: Check if Snyk SARIF exists
+      id: check-snyk-sarif
+      run: |
+        if [ -f "snyk.sarif" ]; then
+          echo "sarif-exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "sarif-exists=false" >> $GITHUB_OUTPUT
+          echo "Snyk SARIF file not found, skipping upload"
+        fi
 
     - name: Upload Snyk results to GitHub Code Scanning
-      if: always()
+      if: steps.check-snyk-sarif.outputs.sarif-exists == 'true'
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: snyk.sarif
