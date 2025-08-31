@@ -34,6 +34,24 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Check deployment secrets
+      run: |
+        echo "Checking required deployment secrets..."
+        if [[ -z "${{ secrets.STAGING_HOST }}" ]]; then
+          echo "❌ STAGING_HOST secret is not configured"
+          echo "Please add the following secrets to your repository:"
+          echo "- STAGING_HOST: Your staging server hostname/IP"
+          echo "- STAGING_USER: SSH username for staging server"  
+          echo "- STAGING_SSH_KEY: SSH private key for staging server"
+          echo "- STAGING_DB_USER: Database username for staging"
+          echo "- STAGING_DB_PASSWORD: Database password for staging"
+          echo "- STAGING_JWT_SECRET: JWT secret for staging environment"
+          echo ""
+          echo "Go to: Repository Settings → Secrets and variables → Actions → New repository secret"
+          exit 1
+        fi
+        echo "✅ Staging deployment secrets are configured"
+
     - name: Set deployment version
       id: version
       run: |
@@ -136,6 +154,24 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Check production deployment secrets
+      run: |
+        echo "Checking required production deployment secrets..."
+        if [[ -z "${{ secrets.PRODUCTION_HOST }}" ]]; then
+          echo "❌ PRODUCTION_HOST secret is not configured"
+          echo "Please add the following secrets to your repository:"
+          echo "- PRODUCTION_HOST: Your production server hostname/IP"
+          echo "- PRODUCTION_USER: SSH username for production server"  
+          echo "- PRODUCTION_SSH_KEY: SSH private key for production server"
+          echo "- PRODUCTION_DB_USER: Database username for production"
+          echo "- PRODUCTION_DB_PASSWORD: Database password for production"
+          echo "- PRODUCTION_JWT_SECRET: JWT secret for production environment"
+          echo ""
+          echo "Go to: Repository Settings → Secrets and variables → Actions → New repository secret"
+          exit 1
+        fi
+        echo "✅ Production deployment secrets are configured"
 
     - name: Set deployment version
       id: version
