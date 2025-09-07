@@ -1,11 +1,5 @@
 # 🎮 Matchmaking Service
 
-[![CI Pipeline](https://github.com/your-username/matchmaking-service/workflows/CI%20Pipeline/badge.svg)](https://github.com/your-username/matchmaking-service/actions/workflows/ci.yml)
-[![Docker Build](https://github.com/your-username/matchmaking-service/workflows/Docker%20Build%20&%20Push/badge.svg)](https://github.com/your-username/matchmaking-service/actions/workflows/docker.yml)
-[![Security Scan](https://github.com/your-username/matchmaking-service/workflows/Security%20Scan/badge.svg)](https://github.com/your-username/matchmaking-service/actions/workflows/security.yml)
-[![codecov](https://codecov.io/gh/your-username/matchmaking-service/branch/main/graph/badge.svg)](https://codecov.io/gh/your-username/matchmaking-service)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=matchmaking-service&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=matchmaking-service)
-
 A high-performance, real-time matchmaking service built with **Spring Boot 3.5.4** and **Java 21**. This service provides Elo-based skill matching, real-time WebSocket communication, JWT authentication, and comprehensive monitoring capabilities.
 
 ## 📋 Table of Contents
