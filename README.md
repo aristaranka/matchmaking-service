@@ -1,4 +1,4 @@
-# 🎮 Matchmaking Service
+# 🎮 Game Matchmaking Service
 
 A high-performance, real-time matchmaking service built with **Spring Boot 3.5.4** and **Java 21**. This service provides Elo-based skill matching, real-time WebSocket communication, JWT authentication, and comprehensive monitoring capabilities.
 
